@@ -344,6 +344,13 @@ class VehicleSettingsManagerView(PanelManagerView):
         "get_state": lambda: self._controller._params.get_bool("GMDashSpoofOffsets"),
         "set_state": lambda s: self._controller._on_toggle("GMDashSpoofOffsets"),
       })
+    if cs.isGM and cs.isBolt and cs.hasCCLong and not cs.hasPedal:
+      toggles.append({
+        "title": tr("Regen Paddle Last Resort"),
+        "subtitle": tr("Hold the regen paddle when a lead closes hard and lowering the set speed is not enough. Stock cruise may cancel."),
+        "get_state": lambda: self._controller._params.get_bool("GMBoltCCPaddleSafeguard"),
+        "set_state": lambda s: self._controller._on_toggle("GMBoltCCPaddleSafeguard"),
+      })
     if cs.isGM and cs.hasOpenpilotLongitudinal:
       toggles.append({
         "title": tr("CAN Ignition Only"),

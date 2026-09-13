@@ -241,6 +241,10 @@ class CarInterface(CarInterfaceBase):
       volt_one_pedal_mode = params.get_bool("VoltOnePedalMode")
     except UnknownKeyName:
       volt_one_pedal_mode = False
+    try:
+      gm_bolt_cc_paddle_safeguard = params.get_bool("GMBoltCCPaddleSafeguard")
+    except UnknownKeyName:
+      gm_bolt_cc_paddle_safeguard = False
 
     ret.brand = "gm"
     ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.gm)]
@@ -764,6 +768,18 @@ class CarInterface(CarInterfaceBase):
       candidate in CC_REGEN_PADDLE_CAR
     )
     if use_panda_paddle_sched:
+      ret.safetyConfigs[0].safetyParam |= GMSafetyFlags.FLAG_GM_PANDA_PADDLE_SCHED.value
+
+    use_bolt_cc_paddle_safeguard = (
+      gm_bolt_cc_paddle_safeguard and
+      ret.openpilotLongitudinalControl and
+      not ret.enableGasInterceptorDEPRECATED and
+      bool(ret.flags & GMFlags.CC_LONG.value) and
+      candidate in (CAR.CHEVROLET_BOLT_CC_2017, CAR.CHEVROLET_BOLT_CC_2018_2021, CAR.CHEVROLET_BOLT_CC_2022_2023)
+    )
+    if use_bolt_cc_paddle_safeguard:
+      # Cruise-button Bolts feed the regen paddle spoof only as a last-resort brake. Let the
+      # panda align those frames with the stock paddle message like the pedal-long path does.
       ret.safetyConfigs[0].safetyParam |= GMSafetyFlags.FLAG_GM_PANDA_PADDLE_SCHED.value
 
     try:
