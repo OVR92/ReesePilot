@@ -670,10 +670,12 @@ class CarInterface(CarInterfaceBase):
       ret.safetyConfigs[0].safetyParam |= GMSafetyFlags.FLAG_GM_CC_LONG.value
 
       if candidate != CAR.CHEVROLET_MALIBU_HYBRID_CC:
+        # LongControl runs a PID on acceleration error with the planner accel as feedforward.
+        # The old kp=5 / 0.9 deadzone tune was written for the retired speed-error loop; on the
+        # accel loop it amplified aEgo noise five-fold into the cruise button spam. Keep the
+        # command close to the planner accel so the button logic sees a clean signal.
         ret.longitudinalTuning.kpBP = [10.7, 10.8, 28.]  # 10.7 m/s == 24 mph
-        ret.longitudinalTuning.kpV = [0., 5., 2.]
-        ret.longitudinalTuning.deadzoneBPDEPRECATED = [0., 1.]
-        ret.longitudinalTuning.deadzoneVDEPRECATED = [0.9, 0.9]
+        ret.longitudinalTuning.kpV = [0., 0.5, 0.5]
         ret.longitudinalActuatorDelay = 1.
         if candidate == CAR.CHEVROLET_MALIBU_CC:
           ret.longitudinalTuning.kpV = [0., 20., 20.]
