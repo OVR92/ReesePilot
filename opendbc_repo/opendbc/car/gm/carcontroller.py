@@ -176,116 +176,6 @@ def should_send_cc_button_spam(CP, CC, CS):
   )
 
 
-BOLT_CC_PADDLE_SAFEGUARD_CARS = {
-  CAR.CHEVROLET_BOLT_CC_2017,
-  CAR.CHEVROLET_BOLT_CC_2018_2021,
-  CAR.CHEVROLET_BOLT_CC_2022_2023,
-}
-BOLT_CC_PADDLE_TRIGGER_ACCEL = -1.6        # planner decel the stock cruise cannot deliver by coasting (m/s^2)
-BOLT_CC_PADDLE_TRIGGER_PLAN_DROP = 2.0     # planned speed 2.5 s ahead must be this far below vEgo (m/s)
-BOLT_CC_PADDLE_TRIGGER_CONFIRM_S = 0.3
-BOLT_CC_PADDLE_MIN_SPEED = 8.0             # m/s, below this a cancel and coast is all that is useful
-BOLT_CC_PADDLE_RELEASE_ACCEL = -0.6        # release once the planner request eases above this
-BOLT_CC_PADDLE_RELEASE_CONFIRM_S = 0.5
-BOLT_CC_PADDLE_MIN_HOLD_S = 1.0
-BOLT_CC_PADDLE_MAX_HOLD_S = 8.0
-BOLT_CC_PADDLE_FEED_TAIL_S = 0.5           # keep feeding released frames so the panda scheduler hands off cleanly
-BOLT_CC_PADDLE_REARM_S = 2.0
-
-
-def supports_bolt_cc_paddle_safeguard(CP):
-  """Cruise-button Bolt with no pedal, OP long, and the panda paddle scheduler bit set."""
-  return (
-    CP.carFingerprint in BOLT_CC_PADDLE_SAFEGUARD_CARS and
-    bool(CP.flags & GMFlags.CC_LONG.value) and
-    not CP.enableGasInterceptorDEPRECATED and
-    bool(CP.openpilotLongitudinalControl) and
-    bool(CP.safetyConfigs[0].safetyParam & GMSafetyFlags.FLAG_GM_PANDA_PADDLE_SCHED.value)
-  )
-
-
-class BoltCCPaddleSafeguard:
-  """Last-resort regen paddle spoof for cruise-button Bolts.
-
-  The stock cruise can only slow by coasting once its set speed is lowered. When the planner
-  asks for far more deceleration than that with a lead in front, hold the regen paddle spoof
-  until the request eases or the driver takes over. A lead that cuts in close but is pulling
-  away never produces such a request, so it does not trigger this. The panda blocks regen
-  frames once the stock cruise drops out, so pressing stops as soon as cruise is no longer
-  active; the driver resumes with RES.
-  """
-
-  def __init__(self):
-    self.pressed = False
-    self.trigger_frames = 0
-    self.release_frames = 0
-    self.hold_frames = 0
-    self.tail_frames = 0
-    self.rearm_frames = 0
-
-  def _release(self):
-    self.pressed = False
-    self.hold_frames = 0
-    self.release_frames = 0
-    self.tail_frames = int(round(BOLT_CC_PADDLE_FEED_TAIL_S / DT_CTRL))
-    self.rearm_frames = int(round(BOLT_CC_PADDLE_REARM_S / DT_CTRL))
-
-  def _output(self):
-    if self.pressed:
-      return True, True
-    if self.tail_frames > 0:
-      self.tail_frames -= 1
-      return False, True
-    return False, False
-
-  def update(self, active, long_active, cruise_enabled, lead_visible, v_ego, accel_cmd, v_plan,
-             gas_pressed, brake_pressed, driver_regen):
-    """Returns (press_paddle, feed_active). Call once per 100 Hz frame."""
-    driver_override = gas_pressed or brake_pressed or driver_regen
-    if not active or not long_active or driver_override:
-      if self.pressed:
-        self._release()
-      self.trigger_frames = 0
-      if self.rearm_frames > 0:
-        self.rearm_frames -= 1
-      return self._output()
-
-    if self.pressed:
-      self.hold_frames += 1
-      forced_release = (
-        not cruise_enabled or
-        v_ego < 3.0 or
-        self.hold_frames >= int(round(BOLT_CC_PADDLE_MAX_HOLD_S / DT_CTRL))
-      )
-      self.release_frames = self.release_frames + 1 if accel_cmd > BOLT_CC_PADDLE_RELEASE_ACCEL else 0
-      confirmed_release = (
-        self.hold_frames >= int(round(BOLT_CC_PADDLE_MIN_HOLD_S / DT_CTRL)) and
-        self.release_frames >= int(round(BOLT_CC_PADDLE_RELEASE_CONFIRM_S / DT_CTRL))
-      )
-      if forced_release or confirmed_release:
-        self._release()
-      return self._output()
-
-    if self.rearm_frames > 0:
-      self.rearm_frames -= 1
-    plan_drop = (v_ego - v_plan) if v_plan > 0.0 else 0.0
-    want = (
-      cruise_enabled and
-      lead_visible and
-      v_ego >= BOLT_CC_PADDLE_MIN_SPEED and
-      accel_cmd <= BOLT_CC_PADDLE_TRIGGER_ACCEL and
-      plan_drop >= BOLT_CC_PADDLE_TRIGGER_PLAN_DROP
-    )
-    self.trigger_frames = self.trigger_frames + 1 if want else 0
-    if want and self.rearm_frames == 0 and self.trigger_frames >= int(round(BOLT_CC_PADDLE_TRIGGER_CONFIRM_S / DT_CTRL)):
-      self.pressed = True
-      self.hold_frames = 0
-      self.release_frames = 0
-      self.trigger_frames = 0
-      self.tail_frames = 0
-    return self._output()
-
-
 def get_adas_keepalive_step(CP, is_kaofui_car):
   if CP.networkLocation == NetworkLocation.gateway:
     base_step = CarControllerParams.ADAS_KEEPALIVE_STEP
@@ -653,8 +543,6 @@ class CarController(CarControllerBase):
     self.regen_min_off_frames = 0
     self.planner_regen_hold = False
     self.paddle_handoff_frames = 0
-    self.bolt_cc_paddle_safeguard = BoltCCPaddleSafeguard()
-    self.bolt_cc_paddle_safeguard_supported = supports_bolt_cc_paddle_safeguard(self.CP)
     self.pedal_active_last = False
     self.aego = 0.0
     self.maneuver_paddle_mode = "auto"
@@ -1021,21 +909,6 @@ class CarController(CarControllerBase):
       paddle_sched_feed_active = False
 
     paddle_spoof_pressed = raw_regen_active and (CS.out.vEgo > 2.68)
-
-    safeguard_pressed, safeguard_feed = self.bolt_cc_paddle_safeguard.update(
-      self.bolt_cc_paddle_safeguard_supported and bool(getattr(starpilot_toggles, "gm_bolt_cc_paddle_safeguard", False)),
-      CC.longActive,
-      CS.out.cruiseState.enabled,
-      bool(hud_control.leadVisible),
-      float(CS.out.vEgo),
-      float(actuators.accel),
-      float(getattr(actuators, "speed", 0.0) or 0.0),
-      CS.out.gasPressed,
-      CS.out.brakePressed,
-      CS.out.regenBraking,
-    )
-    paddle_spoof_pressed = paddle_spoof_pressed or safeguard_pressed
-    paddle_sched_feed_active = paddle_sched_feed_active or safeguard_feed
     auto_hold_active = should_activate_auto_hold(
       hold_ready,
       CS.auto_hold_armed,

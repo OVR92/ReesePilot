@@ -10,9 +10,6 @@ from opendbc.car.car_helpers import interfaces
 from opendbc.car.gm import gmcan
 from opendbc.car.gm.carstate import CarState as GMCarState, get_hard_cruise_buttons, update_auto_hold_drive_timers
 from opendbc.car.gm.carcontroller import (
-  BOLT_CC_PADDLE_MAX_HOLD_S,
-  BoltCCPaddleSafeguard,
-  supports_bolt_cc_paddle_safeguard,
   VisualAlert,
   get_acc_dashboard_always_one,
   get_acc_dashboard_fcw_alert,
@@ -1042,76 +1039,6 @@ class TestGMCarController:
     assert controller.apply_speed == 65
     controller.frame += 4
     assert gmcan.create_gm_cc_spam_command(packer, controller, cs, actuators, toggles, v_cruise=v_cruise) == []
-
-  @staticmethod
-  def _run_paddle_safeguard(guard, frames, **kw):
-    args = dict(active=True, long_active=True, cruise_enabled=True, lead_visible=True, v_ego=25.0,
-                accel_cmd=-2.0, v_plan=20.0, gas_pressed=False, brake_pressed=False, driver_regen=False)
-    args.update(kw)
-    out = (False, False)
-    for _ in range(frames):
-      out = guard.update(**args)
-    return out
-
-  def test_bolt_cc_paddle_safeguard_triggers_on_sustained_hard_decel_with_lead(self):
-    guard = BoltCCPaddleSafeguard()
-    assert self._run_paddle_safeguard(guard, 20) == (False, False)
-    assert self._run_paddle_safeguard(guard, 15) == (True, True)
-
-  def test_bolt_cc_paddle_safeguard_ignores_faster_cut_in(self):
-    guard = BoltCCPaddleSafeguard()
-    # Close lead pulling away: mild lift request and the planned speed stays near vEgo.
-    assert self._run_paddle_safeguard(guard, 200, accel_cmd=-0.4, v_plan=24.5) == (False, False)
-
-  def test_bolt_cc_paddle_safeguard_requires_lead_and_speed(self):
-    guard = BoltCCPaddleSafeguard()
-    assert self._run_paddle_safeguard(guard, 200, lead_visible=False) == (False, False)
-    assert self._run_paddle_safeguard(guard, 200, v_ego=6.0, v_plan=2.0) == (False, False)
-
-  def test_bolt_cc_paddle_safeguard_is_inert_when_disabled(self):
-    guard = BoltCCPaddleSafeguard()
-    assert self._run_paddle_safeguard(guard, 200, active=False) == (False, False)
-
-  def test_bolt_cc_paddle_safeguard_releases_on_driver_input_with_feed_tail(self):
-    guard = BoltCCPaddleSafeguard()
-    self._run_paddle_safeguard(guard, 40)
-    assert guard.pressed
-    assert self._run_paddle_safeguard(guard, 1, brake_pressed=True) == (False, True)
-    assert self._run_paddle_safeguard(guard, 60, brake_pressed=True) == (False, False)
-
-  def test_bolt_cc_paddle_safeguard_stops_pressing_when_stock_cruise_drops(self):
-    guard = BoltCCPaddleSafeguard()
-    self._run_paddle_safeguard(guard, 40)
-    assert self._run_paddle_safeguard(guard, 1, cruise_enabled=False) == (False, True)
-    assert not guard.pressed
-
-  def test_bolt_cc_paddle_safeguard_holds_min_time_then_releases_when_request_eases(self):
-    guard = BoltCCPaddleSafeguard()
-    self._run_paddle_safeguard(guard, 40)
-    assert self._run_paddle_safeguard(guard, 40, accel_cmd=-0.2) == (True, True)
-    assert self._run_paddle_safeguard(guard, 60, accel_cmd=-0.2) == (False, True)
-    assert not guard.pressed
-
-  def test_bolt_cc_paddle_safeguard_max_hold_and_rearm_lockout(self):
-    guard = BoltCCPaddleSafeguard()
-    self._run_paddle_safeguard(guard, 30 + int(BOLT_CC_PADDLE_MAX_HOLD_S / DT_CTRL))
-    assert not guard.pressed
-    assert self._run_paddle_safeguard(guard, 100) == (False, False)
-    assert self._run_paddle_safeguard(guard, 150) == (True, True)
-
-  def test_supports_bolt_cc_paddle_safeguard_requires_cc_long_no_pedal_and_sched_bit(self):
-    def cp(**kw):
-      base = dict(carFingerprint=CAR.CHEVROLET_BOLT_CC_2022_2023, flags=GMFlags.CC_LONG.value,
-                  enableGasInterceptorDEPRECATED=False, openpilotLongitudinalControl=True,
-                  safetyConfigs=[SimpleNamespace(safetyParam=GMSafetyFlags.FLAG_GM_PANDA_PADDLE_SCHED.value)])
-      base.update(kw)
-      return SimpleNamespace(**base)
-
-    assert supports_bolt_cc_paddle_safeguard(cp())
-    assert not supports_bolt_cc_paddle_safeguard(cp(carFingerprint=CAR.CHEVROLET_BOLT_ACC_2022_2023))
-    assert not supports_bolt_cc_paddle_safeguard(cp(enableGasInterceptorDEPRECATED=True))
-    assert not supports_bolt_cc_paddle_safeguard(cp(flags=0))
-    assert not supports_bolt_cc_paddle_safeguard(cp(safetyConfigs=[SimpleNamespace(safetyParam=0)]))
 
   def test_xt4_cc_redneck_spam_matches_physical_button_burst(self):
     packer = CANPacker(DBC[CAR.CADILLAC_XT4_CC][Bus.pt])

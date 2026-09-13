@@ -3522,15 +3522,6 @@
         "settings_tier": "simple"
       },
       {
-        "key": "GMBoltCCPaddleSafeguard",
-        "label": "Regen Paddle Last-Resort Brake",
-        "description": "On cruise-button Bolts (no ACC, no pedal), hold the regen paddle spoof when a lead ahead is closing hard and the planner asks for far more braking than lowering the set speed can give. The stock cruise may cancel; press RES to resume.",
-        "picker_description": "Spoofs the regen paddle as a last-resort brake on cruise-button Bolts.",
-        "data_type": "bool",
-        "ui_type": "toggle",
-        "settings_tier": "simple"
-      },
-      {
         "key": "IgnoreIgnitionLine",
         "label": "Use CAN Ignition Only",
         "description": "Use Panda firmware that ignores the physical ignition line and starts from CAN ignition only.\n\nRequires a Panda flash. Use this only on vehicles with reliable CAN ignition when the harness box reports false ignition.",
