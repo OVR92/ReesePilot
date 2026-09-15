@@ -52,6 +52,7 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.main_panel import StarPil
 from openpilot.selfdrive.ui.layouts.settings.starpilot.navigation import StarPilotNavigationLayout
 from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import StarPilotPanelType
 from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import BreadcrumbController, gui_app
+from openpilot.selfdrive.ui.lib.starpilot_version import STARPILOT_DISPLAY_NAME
 
 
 def test_root_hub_contains_the_six_categories_in_order():
@@ -233,17 +234,17 @@ def test_breadcrumb_paths_and_folder_jump_back(monkeypatch):
   layout, _ = _make_layout(monkeypatch)
   monkeypatch.setattr(gui_app, "_nav_stack", [layout], raising=False)
 
-  assert BreadcrumbController.build_path() == [("StarPilot", "action:home")]
+  assert BreadcrumbController.build_path() == [(STARPILOT_DISPLAY_NAME, "action:home")]
 
   _click_title(layout, "Driving Controls")
   assert BreadcrumbController.build_path() == [
-    ("StarPilot", "action:home"),
+    (STARPILOT_DISPLAY_NAME, "action:home"),
     ("Driving Controls", "action:hub:1"),
   ]
 
   _click_title(layout, "Navigation & Maps")
   assert BreadcrumbController.build_path() == [
-    ("StarPilot", "action:home"),
+    (STARPILOT_DISPLAY_NAME, "action:home"),
     ("Driving Controls", "action:hub:1"),
     ("Navigation & Maps", "action:hub:2"),
   ]
@@ -281,7 +282,7 @@ def test_home_breadcrumb_clears_hub_path_panel_stack_and_active_panel(monkeypatc
   assert layout._panel_stack == []
   assert layout._current_panel == StarPilotPanelType.MAIN
   assert maps_panel.hide_count == 1
-  assert BreadcrumbController.build_path() == [("StarPilot", "action:home")]
+  assert BreadcrumbController.build_path() == [(STARPILOT_DISPLAY_NAME, "action:home")]
 
 
 def test_navigation_start_is_the_summary_action_not_a_duplicate_rail_target():

@@ -12,7 +12,7 @@ from openpilot.system.ui.widgets.icon_widget import IconWidget
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.lib.application import ASSETS_DIR, gui_app, FontWeight, MousePos
 from openpilot.selfdrive.ui.lib.mode_banner import ModeBannerVariant, get_mode_banner_variant, mode_atom_color
-from openpilot.selfdrive.ui.lib.starpilot_version import STARPILOT_DISPLAY_VERSION
+from openpilot.selfdrive.ui.lib.starpilot_version import STARPILOT_DISPLAY_NAME, STARPILOT_DISPLAY_VERSION
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.starpilot.common.model_lab import model_lab_pair_display_name_from_params
 
@@ -177,7 +177,7 @@ class MiciHomeLayout(Widget):
       self._mic_icon,
     ], spacing=18)
 
-    self._openpilot_label = UnifiedLabel("StarPilot", font_size=96, font_weight=FontWeight.BRAND, max_width=480, wrap_text=False)
+    self._openpilot_label = UnifiedLabel(STARPILOT_DISPLAY_NAME, font_size=96, font_weight=FontWeight.BRAND, max_width=480, wrap_text=False)
     self._version_label = UnifiedLabel("", font_size=36, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
     self._large_version_label = UnifiedLabel("", font_size=64, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
     self._date_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)

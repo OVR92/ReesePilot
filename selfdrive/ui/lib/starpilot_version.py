@@ -1,3 +1,6 @@
+# Display name of this fork. Package, param, and class names stay "starpilot" so
+# upstream StarPilot merges keep applying cleanly.
+STARPILOT_DISPLAY_NAME = "ReesePilot"
 STARPILOT_DISPLAY_VERSION = "6.7.7"
 
 

@@ -8,7 +8,7 @@ from openpilot.selfdrive.ui.widgets.exp_mode_button import ExperimentalModeButto
 from openpilot.selfdrive.ui.widgets.drive_stats import DriveStatsDashboard
 from openpilot.selfdrive.ui.widgets.home_info_card import HomeInfoCard
 from openpilot.selfdrive.ui.widgets.setup import SetupWidget
-from openpilot.selfdrive.ui.lib.starpilot_version import starpilot_display_description
+from openpilot.selfdrive.ui.lib.starpilot_version import STARPILOT_DISPLAY_NAME, starpilot_display_description
 from openpilot.starpilot.common.model_lab import model_lab_pair_display_name_from_params
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos
@@ -182,7 +182,7 @@ class HomeLayout(Widget):
 
     version_rect = rl.Rectangle(self.header_rect.x + self.header_rect.width - version_text_width, self.header_rect.y,
                                 version_text_width, self.header_rect.height)
-    brand_text = "StarPilot"
+    brand_text = STARPILOT_DISPLAY_NAME
     detail_text = self._version_text.removeprefix(brand_text)
     brand_font = gui_app.font(FontWeight.BRAND)
     version_font_size = 48
@@ -261,7 +261,7 @@ class HomeLayout(Widget):
     self._prev_alerts_present = alerts_present
 
   def _get_version_text(self) -> str:
-    brand = "StarPilot"
+    brand = STARPILOT_DISPLAY_NAME
     description = starpilot_display_description(self.params.get("UpdaterCurrentDescription"))
     version_text = f"{brand} {description}" if description else brand
 
