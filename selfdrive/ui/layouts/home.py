@@ -184,7 +184,9 @@ class HomeLayout(Widget):
                                 version_text_width, self.header_rect.height)
     brand_text = STARPILOT_DISPLAY_NAME
     detail_text = self._version_text.removeprefix(brand_text)
-    brand_font = gui_app.font(FontWeight.BRAND)
+    # como-heavy.fnt is a 13-glyph subset covering only the letters of "StarPilot";
+    # other names render as "?" in it, so the brand uses the full Inter Bold font.
+    brand_font = gui_app.font(FontWeight.BOLD)
     version_font_size = 48
 
     def _measure_header(font_size: int) -> tuple[rl.Vector2, rl.Vector2]:
@@ -201,7 +203,7 @@ class HomeLayout(Widget):
     rendered_width = min(total_width, version_rect.width)
     text_x = version_rect.x + version_rect.width - rendered_width
     brand_rect = rl.Rectangle(text_x, version_rect.y, min(brand_size.x, rendered_width), version_rect.height)
-    gui_label(brand_rect, brand_text, version_font_size + 2, rl.WHITE, font_weight=FontWeight.BRAND, elide_right=False)
+    gui_label(brand_rect, brand_text, version_font_size + 2, rl.WHITE, font_weight=FontWeight.BOLD, elide_right=False)
 
     detail_width = max(0.0, rendered_width - brand_rect.width)
     if detail_text and detail_width > 0:

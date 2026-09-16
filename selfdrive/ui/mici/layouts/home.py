@@ -177,7 +177,10 @@ class MiciHomeLayout(Widget):
       self._mic_icon,
     ], spacing=18)
 
-    self._openpilot_label = UnifiedLabel(STARPILOT_DISPLAY_NAME, font_size=96, font_weight=FontWeight.BRAND, max_width=480, wrap_text=False)
+    # como-heavy.fnt is a 13-glyph subset covering only the letters of "StarPilot"; other
+    # names render as "?" in it. Use the full Inter Bold font, a bit smaller so the longer
+    # name still fits the 480 px column without eliding.
+    self._openpilot_label = UnifiedLabel(STARPILOT_DISPLAY_NAME, font_size=84, font_weight=FontWeight.BOLD, max_width=480, wrap_text=False)
     self._version_label = UnifiedLabel("", font_size=36, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
     self._large_version_label = UnifiedLabel("", font_size=64, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
     self._date_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
