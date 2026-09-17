@@ -33,6 +33,8 @@ BOLT_CC_BUTTON_CARS = {
 # command, which limit-cycles when fed through 1 mph steps.
 BOLT_CC_SPEEDO_RATIO = 1.01           # stock cruise holds vEgo about 1% under the displayed set speed
 BOLT_CC_PLAN_HORIZON_S = 2.5          # actuators.speed is the planned speed this far ahead
+BOLT_CC_ACCEL_HORIZON_S = 4.0         # integrate a sustained decel request this far ahead into the target
+BOLT_CC_ACCEL_DEADBAND = 0.15         # ignore decel requests smaller than this (m/s^2) so steady following stays quiet
 BOLT_CC_TAP_HYSTERESIS_MPH = 0.8      # |target - set speed| needed before a 1 mph tap
 BOLT_CC_TARGET_TAU_UP_S = 3.0         # target filter time constant while the target rises
 BOLT_CC_TARGET_TAU_DOWN_S = 1.5       # target filter time constant while the target falls
@@ -341,6 +343,15 @@ def _bolt_cc_setpoint_button(controller, CS, actuators, v_cruise, ms_convert, is
   if v_plan <= 0.0:
     v_plan = v_ego + BOLT_CC_PLAN_HORIZON_S * accel
   raw_target = max(v_plan, 0.0)
+  # The planner's lead-approach shaping (far slow leads, pre-brake) lives in the accel target, while
+  # the published speed trajectory is the raw MPC plan that assumes full braking authority. Integrate
+  # a sustained decel request so the set speed starts dropping at first sight of a slower lead.
+  decel_request = min(0.0, accel + BOLT_CC_ACCEL_DEADBAND)
+  if decel_request < 0.0:
+    # Floor at the stock minimum set speed: a hard request should drive the set speed down, not
+    # trip the cancel rule below. Only the planned speed may still ask for a cancel.
+    accel_floor = BOLT_CC_MIN_SET_SPEED_MPH * CV.MPH_TO_MS / BOLT_CC_SPEEDO_RATIO
+    raw_target = min(raw_target, max(v_ego + decel_request * BOLT_CC_ACCEL_HORIZON_S, accel_floor))
   has_cruise_cap = v_cruise is not None and float(v_cruise) > 0.0
   if has_cruise_cap:
     raw_target = min(raw_target, float(v_cruise))

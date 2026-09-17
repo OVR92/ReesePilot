@@ -1277,6 +1277,14 @@ STARPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.NO_ENTRY: NoEntryAlert("Pedal Not Calibrated: Check Calibration"),
   },
 
+  StarPilotEventName.cruiseButtonBrakeNow: {
+    ET.PERMANENT: Alert(
+      "BRAKE!",
+      "Lowering the set speed is not enough",
+      AlertStatus.critical, AlertSize.full,
+      Priority.HIGHEST, VisualAlert.fcw, AudibleAlert.warningImmediate, 1.),
+  },
+
   StarPilotEventName.pedalCruiseEnabled: {
     ET.WARNING: Alert(
       "Pedal Cruise Engaged",

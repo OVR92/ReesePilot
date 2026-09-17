@@ -451,6 +451,7 @@ class LongitudinalMpc:
     self.current_dist_adapt = DIST_ADAPTS[0]
     # Initialize acceleration limits to prevent AttributeError
     self.cruise_min_a = ACCEL_MIN
+    self.lead_min_a = ACCEL_MIN
     self.max_a = min(ACCEL_MAX, 1.2)
     self.reset()
 
@@ -920,6 +921,11 @@ class LongitudinalMpc:
     self.cruise_min_a = min_a
     self.max_a = max_a
 
+  def set_lead_accel_limit(self, min_a):
+    # Soft lower bound on planned ego accel. Cars that cannot brake (cruise-button longitudinal)
+    # set this to their coast authority so the plan starts slowing early instead of assuming ACCEL_MIN.
+    self.lead_min_a = min_a
+
   def update(self, radarstate, v_cruise, x, v, a, j, danger_factor, t_follow,
              personality=log.LongitudinalPersonality.standard, tracking_lead=True,
              optional_far_lead_comfort=True, smooth_duplicate_vision=False,
@@ -950,7 +956,7 @@ class LongitudinalMpc:
     lead_0_obstacle -= float(lead_obstacle_bias[0])
     lead_1_obstacle -= float(lead_obstacle_bias[1])
 
-    self.params[:,0] = ACCEL_MIN
+    self.params[:,0] = self.lead_min_a
     self.params[:,1] = max(0.0, self.max_a)
 
     # Update in ACC mode or ACC/e2e blend

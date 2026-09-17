@@ -963,6 +963,34 @@ class TestGMCarController:
       button, _ = self._bolt_cc_button(controller, cs, plan_mph=65.0, accel=0.05)
       assert button == CruiseButtons.INIT
 
+  def test_bolt_cc_decel_request_lowers_target_before_planned_speed_drops(self):
+    controller = self._bolt_cc_controller()
+    cs = self._bolt_cc_state(v_ego_mph=64.4, set_mph=65)
+    self._bolt_cc_button(controller, cs, plan_mph=65.0)
+    controller.frame += 4
+    # The MPC speed 2.5 s out still shows cruise speed, but the shaped accel target asks for -1 m/s^2.
+    button, interval = self._bolt_cc_button(controller, cs, plan_mph=65.0, accel=-1.0)
+    assert button == CruiseButtons.DECEL_SET
+    assert interval == gmcan.BOLT_CC_URGENT_TAP_INTERVAL_S
+
+  def test_bolt_cc_hard_decel_request_drives_set_speed_down_without_cancelling(self):
+    controller = self._bolt_cc_controller()
+    cs = self._bolt_cc_state(v_ego_mph=50.0, set_mph=50)
+    self._bolt_cc_button(controller, cs, plan_mph=50.0)
+    controller.frame += 4
+    button, interval = self._bolt_cc_button(controller, cs, plan_mph=50.0, accel=-4.0)
+    assert button == CruiseButtons.DECEL_SET
+    assert interval == gmcan.BOLT_CC_URGENT_TAP_INTERVAL_S
+    assert controller.gm_cc_target_speed * CV.MS_TO_MPH == pytest.approx(gmcan.BOLT_CC_MIN_SET_SPEED_MPH / gmcan.BOLT_CC_SPEEDO_RATIO)
+
+  def test_bolt_cc_small_decel_requests_stay_in_deadband(self):
+    controller = self._bolt_cc_controller()
+    cs = self._bolt_cc_state(v_ego_mph=64.4, set_mph=65)
+    for _ in range(100):
+      controller.frame += 4
+      button, _ = self._bolt_cc_button(controller, cs, plan_mph=65.0, accel=-0.1)
+      assert button == CruiseButtons.INIT
+
   def test_bolt_cc_cruise_speed_caps_set_speed(self):
     controller = self._bolt_cc_controller()
     cs = self._bolt_cc_state(v_ego_mph=65.4, set_mph=66)
