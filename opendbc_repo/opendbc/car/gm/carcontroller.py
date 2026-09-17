@@ -176,6 +176,40 @@ def should_send_cc_button_spam(CP, CC, CS):
   )
 
 
+BOLT_CC_BACKSTOP_CARS = {
+  CAR.CHEVROLET_BOLT_CC_2017,
+  CAR.CHEVROLET_BOLT_CC_2018_2021,
+  CAR.CHEVROLET_BOLT_CC_2022_2023,
+}
+# Actions published by starpilot's cruise_button_brake stage machine (CruiseButtonBrakeAction)
+BOLT_CC_ACTION_NONE = 0
+BOLT_CC_ACTION_HOLD = 1
+BOLT_CC_ACTION_CANCEL = 2
+BOLT_CC_ACTION_PADDLE = 3
+BOLT_CC_ACTION_RESUME = 4
+BOLT_CC_PADDLE_TAIL_S = 0.5
+BOLT_CC_RESUME_TAP_INTERVAL_S = 0.25
+
+
+def supports_bolt_cc_regen_backstop(CP):
+  return (
+    CP.carFingerprint in BOLT_CC_BACKSTOP_CARS and
+    bool(CP.flags & GMFlags.CC_LONG.value) and
+    not CP.enableGasInterceptorDEPRECATED and
+    bool(CP.openpilotLongitudinalControl)
+  )
+
+
+def parse_bolt_cc_backstop_action(raw):
+  try:
+    if isinstance(raw, bytes):
+      raw = raw.decode("utf-8", errors="replace")
+    action = int(str(raw).strip() or 0)
+  except (TypeError, ValueError):
+    return BOLT_CC_ACTION_NONE
+  return action if action in (BOLT_CC_ACTION_HOLD, BOLT_CC_ACTION_CANCEL, BOLT_CC_ACTION_PADDLE, BOLT_CC_ACTION_RESUME) else BOLT_CC_ACTION_NONE
+
+
 def get_adas_keepalive_step(CP, is_kaofui_car):
   if CP.networkLocation == NetworkLocation.gateway:
     base_step = CarControllerParams.ADAS_KEEPALIVE_STEP
@@ -515,6 +549,11 @@ class CarController(CarControllerBase):
     self.last_button_frame = 0
     self.cancel_counter = 0
     self.cc_long_cancel_frames = 0
+    # Cruise-button regen backstop (see starpilot/controls/lib/cruise_button_brake.py)
+    self.bolt_cc_backstop_supported = supports_bolt_cc_regen_backstop(self.CP)
+    self.bolt_cc_backstop_action = BOLT_CC_ACTION_NONE
+    self.bolt_cc_paddle_tail_frames = 0
+    self.params_memory = Params(memory=True)
     self.xt4_cc_button_burst_remaining = 0
     self.xt4_cc_button_burst_button = CruiseButtons.INIT
     self.xt4_cc_button_burst_last_counter = -1
@@ -826,6 +865,14 @@ class CarController(CarControllerBase):
     elif CS.out.brakePressed or stock_hold_apply_brake > 0:
       self.auto_hold_brake = estimate_auto_hold_brake(CS.out.brake, stock_hold_apply_brake, self.CP)
 
+    if self.bolt_cc_backstop_supported and self.frame % 4 == 0:
+      try:
+        self.bolt_cc_backstop_action = parse_bolt_cc_backstop_action(self.params_memory.get("CruiseButtonBrakeAction"))
+      except Exception:
+        self.bolt_cc_backstop_action = BOLT_CC_ACTION_NONE
+    if not (self.bolt_cc_backstop_supported and CC.enabled):
+      self.bolt_cc_backstop_action = BOLT_CC_ACTION_NONE
+
     if self.frame % 25 == 0:
       try:
         self.gm_auto_hold_enabled = self.params_.get_bool("GMAutoHold")
@@ -910,6 +957,14 @@ class CarController(CarControllerBase):
       paddle_sched_feed_active = False
 
     paddle_spoof_pressed = raw_regen_active and (CS.out.vEgo > 2.68)
+
+    backstop_paddle = self.bolt_cc_backstop_action == BOLT_CC_ACTION_PADDLE and CS.out.vEgo > 2.68
+    if backstop_paddle:
+      self.bolt_cc_paddle_tail_frames = int(round(BOLT_CC_PADDLE_TAIL_S / DT_CTRL))
+    elif self.bolt_cc_paddle_tail_frames > 0:
+      self.bolt_cc_paddle_tail_frames -= 1
+    paddle_spoof_pressed = paddle_spoof_pressed or backstop_paddle
+    paddle_sched_feed_active = paddle_sched_feed_active or backstop_paddle or self.bolt_cc_paddle_tail_frames > 0
     auto_hold_active = should_activate_auto_hold(
       hold_ready,
       CS.auto_hold_armed,
@@ -962,8 +1017,10 @@ class CarController(CarControllerBase):
       else:
         apply_torque = 0
 
-      if (self.CP.flags & GMFlags.CC_LONG.value) and CC.enabled and not CS.out.cruiseState.enabled:
-        # Keep steer command neutral while stock CC is not active on CC_LONG.
+      if ((self.CP.flags & GMFlags.CC_LONG.value) and CC.enabled and not CS.out.cruiseState.enabled and
+          self.bolt_cc_backstop_action == BOLT_CC_ACTION_NONE):
+        # Keep steer command neutral while stock CC is not active on CC_LONG, unless the regen
+        # backstop paused the stock cruise on purpose.
         apply_torque = 0
 
       self.last_steer_frame = self.frame
@@ -1151,13 +1208,13 @@ class CarController(CarControllerBase):
           self.CP.enableGasInterceptorDEPRECATED and
           self.regen_paddle_pressed
         )
-        paddle_spoof_pressed = raw_regen_active and (CS.out.vEgo > 2.68)
+        paddle_spoof_pressed = (raw_regen_active and (CS.out.vEgo > 2.68)) or backstop_paddle
         if paddle_sched_feed_active:
           can_sends.append(gmcan.create_prndl2_command(self.packer_pt, CanBus.POWERTRAIN, paddle_spoof_pressed, self.CP))
           can_sends.append(gmcan.create_regen_paddle_command(self.packer_pt, CanBus.POWERTRAIN, paddle_spoof_pressed))
 
         if self.CP.flags & GMFlags.CC_LONG.value:
-          if should_send_cc_button_spam(self.CP, CC, CS):
+          if should_send_cc_button_spam(self.CP, CC, CS) and self.bolt_cc_backstop_action == BOLT_CC_ACTION_NONE:
             if self.CP.carFingerprint != CAR.CADILLAC_XT4_CC:
               # Using extend instead of append since the message is only sent intermittently
               can_sends.extend(gmcan.create_gm_cc_spam_command(self.packer_pt, self, CS, actuators, starpilot_toggles,
@@ -1292,6 +1349,12 @@ class CarController(CarControllerBase):
       cc_long_cancel = bool(self.CP.flags & GMFlags.CC_LONG.value) and self.cc_long_cancel_frames > 0
       if self.cc_long_cancel_frames > 0:
         self.cc_long_cancel_frames -= 1
+      if self.bolt_cc_backstop_action == BOLT_CC_ACTION_CANCEL and CS.out.cruiseState.enabled:
+        cc_long_cancel = True
+      if (self.bolt_cc_backstop_action == BOLT_CC_ACTION_RESUME and not CS.out.cruiseState.enabled and
+          (self.frame - self.last_button_frame) * DT_CTRL > BOLT_CC_RESUME_TAP_INTERVAL_S):
+        self.last_button_frame = self.frame
+        can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.POWERTRAIN, (CS.buttons_counter + 1) % 4, CruiseButtons.RES_ACCEL))
 
       if self.CP.carFingerprint == CAR.CHEVROLET_MALIBU_HYBRID_CC:
         stock_cc_active = get_stock_cc_active_for_cancel(self.CP, CS)

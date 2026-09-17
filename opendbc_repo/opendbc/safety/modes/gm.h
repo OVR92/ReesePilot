@@ -67,6 +67,21 @@ static bool gm_cc_long = false;
 static bool gm_has_acc = true;
 static bool gm_pedal_long = false;
 
+// Cruise-button (CC-only) regen backstop. The car can only slow by lowering the stock set speed,
+// so when a lead needs more, openpilot cancels the stock cruise, feeds the regen paddle, and
+// resumes cruise once the gap is rebuilt: the same three things a driver does by hand. Those
+// frames are only allowed for a short window after openpilot itself cancelled an engaged cruise,
+// while cruise main is on, the car is moving, and the driver is not braking. A rising edge of
+// the stock cruise-active bit (the resume) closes the window.
+static const uint32_t GM_CC_BACKSTOP_WINDOW_US = 20000000U;
+static uint32_t gm_cc_backstop_ts = 0U;
+static bool gm_cc_backstop_armed = false;
+
+static bool gm_cc_backstop_allowed(void) {
+  bool in_window = (microsecond_timer_get() - gm_cc_backstop_ts) < GM_CC_BACKSTOP_WINDOW_US;
+  return gm_cc_long && gm_cc_backstop_armed && in_window && acc_main_on && !brake_pressed && vehicle_moving;
+}
+
 // 3D1 spoof scheduler state
 static bool gm_3d1_spoof_valid = false;
 static bool gm_3d1_internal_tx = false;
@@ -292,6 +307,10 @@ static void gm_rx_hook(const CANPacket_t *msg) {
       gm_3d1_last_stock_us = now_us;
       bool cruise_engaged = (msg->data[4] >> 7) != 0U;
       if (gm_cc_long) {
+        if (cruise_engaged && !cruise_engaged_prev) {
+          // stock cruise (re)engaged: the backstop window is over
+          gm_cc_backstop_armed = false;
+        }
         pcm_cruise_check(cruise_engaged);
       } else {
         cruise_engaged_prev = cruise_engaged;
@@ -426,6 +445,16 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
       allowed_btn |= cruise_engaged_prev && ((button == GM_BTN_SET) || (button == GM_BTN_RESUME) || (button == GM_BTN_UNPRESS));
     }
 
+    if (gm_cc_long) {
+      if ((button == GM_BTN_CANCEL) && cruise_engaged_prev) {
+        // openpilot is cancelling an engaged cruise: arm the regen backstop window
+        gm_cc_backstop_ts = microsecond_timer_get();
+        gm_cc_backstop_armed = true;
+      }
+      // RESUME (and the release frame) is allowed inside the window so cruise can be re-engaged
+      allowed_btn |= gm_cc_backstop_allowed() && ((button == GM_BTN_RESUME) || (button == GM_BTN_UNPRESS));
+    }
+
     if (!allowed_btn) {
       tx = false;
     }
@@ -460,10 +489,10 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     }
   }
 
-  // Regen paddle command must obey controls state
+  // Regen paddle command must obey controls state, except inside the CC-only backstop window
   if (msg->addr == 0xBDU) {
     bool regen_apply = GET_BIT(msg, 7U) || GET_BIT(msg, 6U) || GET_BIT(msg, 5U) || GET_BIT(msg, 4U);
-    if (!controls_allowed && regen_apply) {
+    if (!controls_allowed && regen_apply && !gm_cc_backstop_allowed()) {
       tx = false;
     }
 
@@ -485,11 +514,11 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     }
   }
 
-  // PRNDL2 regen spoof command must obey controls state
+  // PRNDL2 regen spoof command must obey controls state, except inside the CC-only backstop window
   if (msg->addr == 0x1F5U) {
     uint8_t prndl2 = msg->data[3] & 0xFU;
     bool prndl_apply = (prndl2 == 7U) || (prndl2 == 5U);
-    if (!controls_allowed && prndl_apply) {
+    if (!controls_allowed && prndl_apply && !gm_cc_backstop_allowed()) {
       tx = false;
     }
 
@@ -718,6 +747,8 @@ static safety_config gm_init(uint16_t param) {
   const bool gm_no_camera = GET_FLAG(param, GM_PARAM_NO_CAMERA);
 
   gm_cc_long = GET_FLAG(param, GM_PARAM_CC_LONG);
+  gm_cc_backstop_armed = false;
+  gm_cc_backstop_ts = 0U;
   gm_has_acc = !GET_FLAG(param, GM_PARAM_NO_ACC);
   gm_pedal_long = GET_FLAG(param, GM_PARAM_PEDAL_LONG);
   const bool gm_volt_cc_gateway = GET_FLAG(param, GM_PARAM_VOLT_CC_GATEWAY) && gm_no_camera && !gm_pedal_long && !gm_has_acc;

@@ -346,10 +346,10 @@ class VehicleSettingsManagerView(PanelManagerView):
       })
     if cs.isGM and cs.isBolt and cs.hasCCLong and not cs.hasPedal:
       toggles.append({
-        "title": tr("Cancel Cruise for Regen"),
-        "subtitle": tr("In L, cancel stock cruise when a lead needs more braking than lowering the set speed gives. Press RES to resume."),
-        "get_state": lambda: self._controller._params.get_bool("GMBoltCCRegenCancel"),
-        "set_state": lambda s: self._controller._on_toggle("GMBoltCCRegenCancel"),
+        "title": tr("Regen Paddle Backstop"),
+        "subtitle": tr("Warn, cancel cruise, pull the regen paddle while needed, then resume once the gap is rebuilt."),
+        "get_state": lambda: self._controller._params.get_bool("GMBoltCCRegenBackstop"),
+        "set_state": lambda s: self._controller._on_toggle("GMBoltCCRegenBackstop"),
       })
     if cs.isGM and cs.hasOpenpilotLongitudinal:
       toggles.append({

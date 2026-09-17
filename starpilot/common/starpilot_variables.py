@@ -1589,8 +1589,8 @@ class StarPilotVariables:
       "GMDashSpoofOffsets",
       condition=toggle.car_make == "gm" and toggle.has_pedal,
     )
-    toggle.gm_bolt_cc_regen_cancel = self.get_value(
-      "GMBoltCCRegenCancel",
+    toggle.gm_bolt_cc_regen_backstop = self.get_value(
+      "GMBoltCCRegenBackstop",
       condition=toggle.car_make == "gm" and toggle.has_cc_long and not toggle.has_pedal,
     )
     toggle.ignore_ignition_line = self.get_value("IgnoreIgnitionLine", condition=toggle.car_make == "gm")

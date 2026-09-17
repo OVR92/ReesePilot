@@ -7,10 +7,11 @@ from openpilot.selfdrive.controls.lib.desire_helper import TurnDirection
 from openpilot.selfdrive.selfdrived.events import ET, EVENT_NAME, STARPILOT_EVENT_NAME, EventName, StarPilotEventName, Events
 
 from openpilot.starpilot.common.starpilot_variables import CRUISING_SPEED, NON_DRIVING_GEARS
-from cereal import car
-from openpilot.starpilot.controls.lib.cruise_button_brake import CRUISE_BUTTON_BRAKE_CARS, CruiseButtonBrake
+from openpilot.starpilot.controls.lib.cruise_button_brake import (
+  ACTION_NONE, CRUISE_BUTTON_BRAKE_CARS, STAGE_CANCEL, STAGE_PADDLE, STAGE_RESUME, CruiseButtonBrake,
+)
 
-GearShifter = car.CarState.GearShifter
+CRUISE_BUTTON_MIN_RESUME_SPEED = 25.0 * CV.MPH_TO_MS  # stock cruise will not resume below 24 mph; add margin
 
 DEJA_VU_G_FORCE = 0.75
 RANDOM_EVENTS_CHANCE = 0.01 * DT_MDL
@@ -37,6 +38,7 @@ class StarPilotEvents:
     self.random_event_timer = 0
     self.tracked_lead_distance = 0
     self.cruise_button_brake = CruiseButtonBrake()
+    self.cruise_button_brake_action = ACTION_NONE
 
     self.played_events = set()
 
@@ -65,24 +67,33 @@ class StarPilotEvents:
 
     lead_one = sm["radarState"].leadOne
     car_state = sm["carState"]
-    brake_alert, brake_cancel = self.cruise_button_brake.update(
+    brake = self.cruise_button_brake.update(
       DT_MDL,
       enabled=long_control_active and getattr(starpilot_toggles, "car_model", None) in CRUISE_BUTTON_BRAKE_CARS,
       cruise_active=car_state.cruiseState.enabled,
+      cruise_available=car_state.cruiseState.available,
       v_ego=car_state.vEgo,
       accel_cmd=acceleration,
       lead_status=lead_one.status,
       lead_d_rel=lead_one.dRel,
       lead_v_lead=lead_one.vLead,
       lead_prob=lead_one.modelProb,
-      gear_low=car_state.gearShifter == GearShifter.low,
-      driver_input=car_state.gasPressed or car_state.brakePressed or car_state.regenBraking,
-      cancel_allowed=bool(getattr(starpilot_toggles, "gm_bolt_cc_regen_cancel", False)),
+      gas_pressed=car_state.gasPressed,
+      brake_pressed=car_state.brakePressed,
+      driver_regen=car_state.regenBraking,
+      backstop_allowed=bool(getattr(starpilot_toggles, "gm_bolt_cc_regen_backstop", False)),
+      min_resume_speed=CRUISE_BUTTON_MIN_RESUME_SPEED,
     )
-    if brake_alert:
+    if brake.alert:
       self.events.add(StarPilotEventName.cruiseButtonBrakeNow)
-    if brake_cancel:
+    if brake.stage in (STAGE_CANCEL, STAGE_PADDLE, STAGE_RESUME):
+      self.events.add(StarPilotEventName.cruiseButtonRegenActive)
+    if brake.disengage:
       self.events.add(StarPilotEventName.cruiseButtonRegenCancel)
+    if brake.action != self.cruise_button_brake_action:
+      # the GM car controller reads this and sends CANCEL / paddle / RESUME frames
+      self.starpilot_planner.params_memory.put_nonblocking("CruiseButtonBrakeAction", str(int(brake.action)))
+      self.cruise_button_brake_action = brake.action
 
     if sm["starpilotCarState"].alwaysOnLateralAllowed != self.always_on_lateral_allowed_previously:
       if sm["starpilotCarState"].alwaysOnLateralAllowed:

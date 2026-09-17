@@ -10,6 +10,11 @@ from opendbc.car.car_helpers import interfaces
 from opendbc.car.gm import gmcan
 from opendbc.car.gm.carstate import CarState as GMCarState, get_hard_cruise_buttons, update_auto_hold_drive_timers
 from opendbc.car.gm.carcontroller import (
+  BOLT_CC_ACTION_CANCEL,
+  BOLT_CC_ACTION_NONE,
+  BOLT_CC_ACTION_PADDLE,
+  parse_bolt_cc_backstop_action,
+  supports_bolt_cc_regen_backstop,
   VisualAlert,
   get_acc_dashboard_always_one,
   get_acc_dashboard_fcw_alert,
@@ -1067,6 +1072,27 @@ class TestGMCarController:
     assert controller.apply_speed == 65
     controller.frame += 4
     assert gmcan.create_gm_cc_spam_command(packer, controller, cs, actuators, toggles, v_cruise=v_cruise) == []
+
+  def test_bolt_cc_backstop_action_parsing_is_defensive(self):
+    assert parse_bolt_cc_backstop_action(None) == BOLT_CC_ACTION_NONE
+    assert parse_bolt_cc_backstop_action(b"") == BOLT_CC_ACTION_NONE
+    assert parse_bolt_cc_backstop_action(b"garbage") == BOLT_CC_ACTION_NONE
+    assert parse_bolt_cc_backstop_action(b"9") == BOLT_CC_ACTION_NONE
+    assert parse_bolt_cc_backstop_action(b"2") == BOLT_CC_ACTION_CANCEL
+    assert parse_bolt_cc_backstop_action("3") == BOLT_CC_ACTION_PADDLE
+
+  def test_bolt_cc_regen_backstop_support_requires_cc_long_no_pedal_bolt(self):
+    def cp(**kw):
+      values = dict(carFingerprint=CAR.CHEVROLET_BOLT_CC_2022_2023, flags=GMFlags.CC_LONG.value,
+                    enableGasInterceptorDEPRECATED=False, openpilotLongitudinalControl=True)
+      values.update(kw)
+      return SimpleNamespace(**values)
+
+    assert supports_bolt_cc_regen_backstop(cp())
+    assert not supports_bolt_cc_regen_backstop(cp(carFingerprint=CAR.CHEVROLET_EQUINOX_CC))
+    assert not supports_bolt_cc_regen_backstop(cp(enableGasInterceptorDEPRECATED=True))
+    assert not supports_bolt_cc_regen_backstop(cp(flags=0))
+    assert not supports_bolt_cc_regen_backstop(cp(openpilotLongitudinalControl=False))
 
   def test_xt4_cc_redneck_spam_matches_physical_button_burst(self):
     packer = CANPacker(DBC[CAR.CADILLAC_XT4_CC][Bus.pt])

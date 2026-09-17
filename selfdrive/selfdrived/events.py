@@ -1285,12 +1285,20 @@ STARPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.HIGHEST, VisualAlert.fcw, AudibleAlert.warningImmediate, 1.),
   },
 
+  StarPilotEventName.cruiseButtonRegenActive: {
+    ET.PERMANENT: Alert(
+      "Regen Braking",
+      "Cruise paused, resumes when clear",
+      AlertStatus.userPrompt, AlertSize.small,
+      Priority.MID, VisualAlert.none, AudibleAlert.none, .2),
+  },
+
   StarPilotEventName.cruiseButtonRegenCancel: {
     ET.USER_DISABLE: Alert(
-      "Cruise Cancelled for Regen Braking",
+      "Cruise Off",
       "Press RES to resume",
       AlertStatus.critical, AlertSize.mid,
-      Priority.HIGHEST, VisualAlert.fcw, AudibleAlert.disengage, 2.),
+      Priority.HIGHEST, VisualAlert.none, AudibleAlert.disengage, 2.),
   },
 
   StarPilotEventName.pedalCruiseEnabled: {

@@ -212,7 +212,7 @@ SAFE_MODE_MANAGED_KEYS = (
   "VoltOnePedalMode",
   "GMPedalLongitudinal",
   "GMDashSpoofOffsets",
-  "GMBoltCCRegenCancel",
+  "GMBoltCCRegenBackstop",
   "LongPitch",
 )
 

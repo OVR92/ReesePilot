@@ -180,6 +180,7 @@ struct StarPilotOnroadEvent @0xe344718567f9ce71 {
     pedalNotCalibrated @40;
     cruiseButtonBrakeNow @41;
     cruiseButtonRegenCancel @42;
+    cruiseButtonRegenActive @43;
   }
 }
 

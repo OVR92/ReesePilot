@@ -641,6 +641,81 @@ class TestGmCcLongitudinalSafety(TestGmCameraSafety):
         self.assertEqual(enabled, self._tx(self._button_msg(btn)))
 
 
+  # --- cruise-button regen backstop: cancel -> paddle -> resume, only in the window after our own cancel ---
+  GM_CC_BACKSTOP_WINDOW_US = 20_000_000
+
+  def _main_on_msg(self, on):
+    return self.packer.make_can_msg_panda("ECMEngineStatus", 0, {"CruiseMainOn": 1 if on else 0})
+
+  def _regen_paddle_msg(self, pressed):
+    return self.packer.make_can_msg_panda("EBCMRegenPaddle", 0, {"RegenPaddle": 2 if pressed else 0})
+
+  def _prndl2_msg(self, regen):
+    return self.packer.make_can_msg_panda("ECMPRDNL2", 0, {"PRNDL2": 5 if regen else 6, "ManualMode": 1 if regen else 0})
+
+  def _backstop_precondition(self, main_on=True, speed=20.0):
+    self.safety.set_timer(0)
+    self._rx(self._main_on_msg(main_on))
+    self._rx(self._speed_msg(speed))
+    self._rx(self._user_brake_msg(False))
+
+  def _arm_backstop(self):
+    self._rx(self._pcm_status_msg(True))
+    self.assertTrue(self._tx(self._button_msg(Buttons.CANCEL)))
+    self._rx(self._pcm_status_msg(False))
+    self.assertFalse(self.safety.get_controls_allowed())
+
+  def test_backstop_blocked_until_openpilot_cancels_engaged_cruise(self):
+    self._backstop_precondition()
+    # cruise dropped on its own (or the driver cancelled): nothing is allowed
+    self._rx(self._pcm_status_msg(True))
+    self._rx(self._pcm_status_msg(False))
+    self.assertFalse(self._tx(self._button_msg(Buttons.RES_ACCEL)))
+    self.assertFalse(self._tx(self._regen_paddle_msg(True)))
+    self.assertFalse(self._tx(self._prndl2_msg(True)))
+    # a CANCEL sent while cruise is already off does not arm anything
+    self.assertFalse(self._tx(self._button_msg(Buttons.CANCEL)))
+    self.assertFalse(self._tx(self._regen_paddle_msg(True)))
+
+  def test_backstop_allows_paddle_and_resume_in_window(self):
+    self._backstop_precondition()
+    self._arm_backstop()
+    self.assertTrue(self._tx(self._regen_paddle_msg(True)))
+    self.assertTrue(self._tx(self._regen_paddle_msg(False)))
+    self.assertTrue(self._tx(self._prndl2_msg(True)))
+    self.assertTrue(self._tx(self._button_msg(Buttons.RES_ACCEL)))
+    self.assertTrue(self._tx(self._button_msg(Buttons.UNPRESS)))
+    # SET is still not a backstop button
+    self.assertFalse(self._tx(self._button_msg(Buttons.DECEL_SET)))
+
+  def test_backstop_window_expires(self):
+    self._backstop_precondition()
+    self._arm_backstop()
+    self.safety.set_timer(self.GM_CC_BACKSTOP_WINDOW_US - 1)
+    self.assertTrue(self._tx(self._regen_paddle_msg(True)))
+    self.safety.set_timer(self.GM_CC_BACKSTOP_WINDOW_US + 1)
+    self.assertFalse(self._tx(self._regen_paddle_msg(True)))
+    self.assertFalse(self._tx(self._button_msg(Buttons.RES_ACCEL)))
+
+  def test_backstop_closes_when_cruise_reengages(self):
+    self._backstop_precondition()
+    self._arm_backstop()
+    self._rx(self._pcm_status_msg(True))   # RES took: cruise active again, controls allowed again
+    self.assertTrue(self.safety.get_controls_allowed())
+    self._rx(self._pcm_status_msg(False))  # dropped again without our cancel: window is closed
+    self.assertFalse(self._tx(self._regen_paddle_msg(True)))
+    self.assertFalse(self._tx(self._button_msg(Buttons.RES_ACCEL)))
+
+  def test_backstop_requires_main_on_moving_and_no_brake(self):
+    for main_on, speed, brake in ((False, 20.0, False), (True, 0.0, False), (True, 20.0, True)):
+      self.safety.init_tests()
+      self._backstop_precondition(main_on=main_on, speed=speed)
+      self._arm_backstop()
+      self._rx(self._user_brake_msg(brake))
+      self.assertFalse(self._tx(self._regen_paddle_msg(True)), (main_on, speed, brake))
+      self.assertFalse(self._tx(self._button_msg(Buttons.RES_ACCEL)), (main_on, speed, brake))
+
+
 class TestGmCcLongitudinalNoCameraSafety(TestGmCcLongitudinalSafety):
   TX_MSGS = TestGmCcLongitudinalSafety.TX_MSGS + [[0x409, 0], [0x40A, 0]]
   RELAY_MALFUNCTION_ADDRS = {0: (), 2: ()}
