@@ -355,6 +355,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"EVTuning", {PERSISTENT, BOOL, "0", "0", 3}},
     {"Fahrenheit", {PERSISTENT, BOOL, "0", "0", 3}},
     {"FlashPanda", {CLEAR_ON_MANAGER_START, BOOL, "0", "0"}},
+    {"GMBoltCCRegenCancel", {PERSISTENT, BOOL, "1", "1", 2, SETTINGS_SIMPLE}},
     {"GMDashSpoofOffsets", {PERSISTENT, BOOL, "0", "0", 2, SETTINGS_SIMPLE}},
     {"GMPedalLongitudinal", {PERSISTENT, BOOL, "1", "1", 2, SETTINGS_SIMPLE}},
     {"HKGRemoteStartBootsComma", {PERSISTENT, BOOL, "0", "0", 0, SETTINGS_SIMPLE}},

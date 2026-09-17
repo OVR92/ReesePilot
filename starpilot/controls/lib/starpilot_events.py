@@ -7,63 +7,10 @@ from openpilot.selfdrive.controls.lib.desire_helper import TurnDirection
 from openpilot.selfdrive.selfdrived.events import ET, EVENT_NAME, STARPILOT_EVENT_NAME, EventName, StarPilotEventName, Events
 
 from openpilot.starpilot.common.starpilot_variables import CRUISING_SPEED, NON_DRIVING_GEARS
-from opendbc.car.gm.values import CAR as GM_CAR
+from cereal import car
+from openpilot.starpilot.controls.lib.cruise_button_brake import CRUISE_BUTTON_BRAKE_CARS, CruiseButtonBrake
 
-# Cruise-button Bolts (no ACC, no pedal) can only slow by lowering the stock set speed. Warn the
-# driver when the planner asks for more deceleration than that can deliver.
-CRUISE_BUTTON_BRAKE_NOW_CARS = {GM_CAR.CHEVROLET_BOLT_CC_2017, GM_CAR.CHEVROLET_BOLT_CC_2018_2021, GM_CAR.CHEVROLET_BOLT_CC_2022_2023}
-CRUISE_BUTTON_BRAKE_NOW_MIN_SPEED = 5.0            # m/s
-CRUISE_BUTTON_BRAKE_NOW_ACCEL = -1.6               # sustained accel command that exceeds coast authority (m/s^2)
-CRUISE_BUTTON_BRAKE_NOW_ACCEL_CONFIRM_S = 0.5
-CRUISE_BUTTON_BRAKE_NOW_MIN_CLOSING = 3.0          # m/s
-CRUISE_BUTTON_BRAKE_NOW_GAP = 8.0                  # m, gap the required-decel estimate aims to keep
-CRUISE_BUTTON_BRAKE_NOW_REQUIRED_DECEL = 1.3       # m/s^2 needed to match the lead by that gap
-CRUISE_BUTTON_BRAKE_NOW_RELEASE_ACCEL = -0.8
-CRUISE_BUTTON_BRAKE_NOW_RELEASE_DECEL = 0.7
-CRUISE_BUTTON_BRAKE_NOW_RELEASE_S = 1.0
-
-
-def required_decel_to_match_lead(v_ego, lead_d_rel, lead_v_lead, gap=CRUISE_BUTTON_BRAKE_NOW_GAP):
-  """Constant deceleration needed to be at the lead's speed once the gap has shrunk to `gap`."""
-  closing = float(v_ego) - float(lead_v_lead)
-  if closing < CRUISE_BUTTON_BRAKE_NOW_MIN_CLOSING:
-    return 0.0
-  room = max(float(lead_d_rel) - gap, 1.0)
-  return closing * closing / (2.0 * room)
-
-
-class CruiseButtonBrakeNow:
-  """Hysteresis state for the cruise-button brake-now alert. Call update() once per 20 Hz frame."""
-
-  def __init__(self):
-    self.active = False
-    self.accel_frames = 0
-    self.release_frames = 0
-
-  def update(self, enabled, v_ego, accel_cmd, lead_status, lead_d_rel, lead_v_lead):
-    if not enabled or v_ego < CRUISE_BUTTON_BRAKE_NOW_MIN_SPEED:
-      self.active = False
-      self.accel_frames = 0
-      self.release_frames = 0
-      return False
-
-    required = required_decel_to_match_lead(v_ego, lead_d_rel, lead_v_lead) if lead_status else 0.0
-    self.accel_frames = self.accel_frames + 1 if accel_cmd <= CRUISE_BUTTON_BRAKE_NOW_ACCEL else 0
-    accel_trigger = self.accel_frames >= int(round(CRUISE_BUTTON_BRAKE_NOW_ACCEL_CONFIRM_S / DT_MDL))
-    lead_trigger = required >= CRUISE_BUTTON_BRAKE_NOW_REQUIRED_DECEL
-
-    if not self.active:
-      if accel_trigger or lead_trigger:
-        self.active = True
-        self.release_frames = 0
-      return self.active
-
-    eased = accel_cmd > CRUISE_BUTTON_BRAKE_NOW_RELEASE_ACCEL and required < CRUISE_BUTTON_BRAKE_NOW_RELEASE_DECEL
-    self.release_frames = self.release_frames + 1 if eased else 0
-    if self.release_frames >= int(round(CRUISE_BUTTON_BRAKE_NOW_RELEASE_S / DT_MDL)):
-      self.active = False
-      self.accel_frames = 0
-    return self.active
+GearShifter = car.CarState.GearShifter
 
 DEJA_VU_G_FORCE = 0.75
 RANDOM_EVENTS_CHANCE = 0.01 * DT_MDL
@@ -89,7 +36,7 @@ class StarPilotEvents:
     self.max_acceleration = 0
     self.random_event_timer = 0
     self.tracked_lead_distance = 0
-    self.cruise_button_brake_now = CruiseButtonBrakeNow()
+    self.cruise_button_brake = CruiseButtonBrake()
 
     self.played_events = set()
 
@@ -117,12 +64,25 @@ class StarPilotEvents:
       self.max_acceleration = 0
 
     lead_one = sm["radarState"].leadOne
-    brake_now = self.cruise_button_brake_now.update(
-      long_control_active and getattr(starpilot_toggles, "car_model", None) in CRUISE_BUTTON_BRAKE_NOW_CARS,
-      sm["carState"].vEgo, acceleration, lead_one.status, lead_one.dRel, lead_one.vLead,
+    car_state = sm["carState"]
+    brake_alert, brake_cancel = self.cruise_button_brake.update(
+      DT_MDL,
+      enabled=long_control_active and getattr(starpilot_toggles, "car_model", None) in CRUISE_BUTTON_BRAKE_CARS,
+      cruise_active=car_state.cruiseState.enabled,
+      v_ego=car_state.vEgo,
+      accel_cmd=acceleration,
+      lead_status=lead_one.status,
+      lead_d_rel=lead_one.dRel,
+      lead_v_lead=lead_one.vLead,
+      lead_prob=lead_one.modelProb,
+      gear_low=car_state.gearShifter == GearShifter.low,
+      driver_input=car_state.gasPressed or car_state.brakePressed or car_state.regenBraking,
+      cancel_allowed=bool(getattr(starpilot_toggles, "gm_bolt_cc_regen_cancel", False)),
     )
-    if brake_now:
+    if brake_alert:
       self.events.add(StarPilotEventName.cruiseButtonBrakeNow)
+    if brake_cancel:
+      self.events.add(StarPilotEventName.cruiseButtonRegenCancel)
 
     if sm["starpilotCarState"].alwaysOnLateralAllowed != self.always_on_lateral_allowed_previously:
       if sm["starpilotCarState"].alwaysOnLateralAllowed:

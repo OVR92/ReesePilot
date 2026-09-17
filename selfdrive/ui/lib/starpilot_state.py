@@ -31,6 +31,7 @@ class StarPilotCarState:
     hasBSM: bool = False
     hasRadar: bool = True
     hasPedal: bool = False
+    hasCCLong: bool = False
     hasSASCM: bool = False
     hasSNG: bool = False
     hasNNFFLog: bool = True
@@ -158,6 +159,7 @@ class StarPilotState:
             self.car_state.hasPCMCruise = bool(self._safe_get(CP, "pcmCruise", False))
             self.car_state.hasPedal = bool(self._safe_get(CP, "enableGasInterceptorDEPRECATED", False))
             self.car_state.hasSASCM = car_make == "gm" and bool(self._safe_get(CP, "flags", 0) & GMFlags.SASCM.value)
+            self.car_state.hasCCLong = car_make == "gm" and bool(self._safe_get(CP, "flags", 0) & GMFlags.CC_LONG.value)
             self.car_state.hasRadar = not bool(self._safe_get(CP, "radarUnavailable", False))
             self.car_state.hasSDSU = starpilot_toggles.get("has_sdsu", False)
             self.car_state.hasSNG = bool(self._safe_get(CP, "autoResumeSng", False))

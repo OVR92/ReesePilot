@@ -397,10 +397,12 @@ def get_vehicle_min_accel(CP, v_ego):
   return float(ACCEL_MIN)
 
 
-# Cruise-button Bolts (no ACC, no pedal) slow only by lowering the stock set speed, which lifts off into
-# L-mode regen. Estimated authority envelope; refine from on-road measurement.
-BOLT_CC_LEAD_MIN_ACCEL_BP = [0.0, 10.0, 20.0, 30.0]
-BOLT_CC_LEAD_MIN_ACCEL_V = [-1.5, -1.5, -1.3, -1.1]
+# Cruise-button Bolts (no ACC, no pedal) slow only by lowering the stock set speed. Measured on a
+# 2023 Bolt EUV: 65 -> 55 mph in ~8 s (0.56 m/s^2), the same in D and L, because the stock cruise
+# applies its own mild lift-off regen regardless of gear. Cancelling cruise in L is ~1.1 m/s^2; that
+# stronger brake is a separate backstop (cruise_button_brake.py), not something the plan may assume.
+BOLT_CC_LEAD_MIN_ACCEL_BP = [0.0, 30.0]
+BOLT_CC_LEAD_MIN_ACCEL_V = [-0.55, -0.55]
 
 
 def get_lead_min_accel(CP, v_ego):

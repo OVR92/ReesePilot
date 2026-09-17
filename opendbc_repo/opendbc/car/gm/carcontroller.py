@@ -514,6 +514,7 @@ class CarController(CarControllerBase):
     self.last_steer_frame = 0
     self.last_button_frame = 0
     self.cancel_counter = 0
+    self.cc_long_cancel_frames = 0
     self.xt4_cc_button_burst_remaining = 0
     self.xt4_cc_button_burst_button = CruiseButtons.INIT
     self.xt4_cc_button_burst_last_counter = -1
@@ -1282,8 +1283,15 @@ class CarController(CarControllerBase):
         can_sends += gmcan.create_adas_keepalive(CanBus.POWERTRAIN)
 
       pedal_cancel = bool(self.CP.flags & GMFlags.PEDAL_LONG.value) and CS.out.cruiseState.enabled
-      cc_long_cancel = ((self.CP.flags & GMFlags.CC_LONG.value) and
-                        self.prev_op_enabled and not CC.enabled and CS.out.cruiseState.enabled)
+      if (self.CP.flags & GMFlags.CC_LONG.value) and self.prev_op_enabled and not CC.enabled and CS.out.cruiseState.enabled:
+        # Keep pressing CANCEL for a moment: the ECM can miss a single frame, and the cruise-button
+        # regen backstop relies on the stock cruise actually dropping out.
+        self.cc_long_cancel_frames = int(round(0.5 / DT_CTRL))
+      if CC.enabled or not CS.out.cruiseState.enabled:
+        self.cc_long_cancel_frames = 0
+      cc_long_cancel = bool(self.CP.flags & GMFlags.CC_LONG.value) and self.cc_long_cancel_frames > 0
+      if self.cc_long_cancel_frames > 0:
+        self.cc_long_cancel_frames -= 1
 
       if self.CP.carFingerprint == CAR.CHEVROLET_MALIBU_HYBRID_CC:
         stock_cc_active = get_stock_cc_active_for_cancel(self.CP, CS)

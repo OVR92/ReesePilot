@@ -3522,6 +3522,15 @@
         "settings_tier": "simple"
       },
       {
+        "key": "GMBoltCCRegenCancel",
+        "label": "Cancel Cruise For Regen Braking",
+        "description": "On cruise-button Bolts (no ACC, no pedal) driven in L, cancel the stock cruise when a lead needs clearly more braking than lowering the set speed can give, so L-mode lift-off regen takes over. openpilot disengages; press RES to resume. Always-on lateral keeps steering.",
+        "picker_description": "Cancels stock cruise for L-mode regen when lowering the set speed is not enough.",
+        "data_type": "bool",
+        "ui_type": "toggle",
+        "settings_tier": "simple"
+      },
+      {
         "key": "IgnoreIgnitionLine",
         "label": "Use CAN Ignition Only",
         "description": "Use Panda firmware that ignores the physical ignition line and starts from CAN ignition only.\n\nRequires a Panda flash. Use this only on vehicles with reliable CAN ignition when the harness box reports false ignition.",
