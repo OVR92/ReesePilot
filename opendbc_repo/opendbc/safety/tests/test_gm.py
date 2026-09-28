@@ -644,8 +644,9 @@ class TestGmCcLongitudinalSafety(TestGmCameraSafety):
   # --- cruise-button regen backstop: cancel -> paddle -> resume, only in the window after our own cancel ---
   GM_CC_BACKSTOP_WINDOW_US = 20_000_000
 
-  def _main_on_msg(self, on):
-    return self.packer.make_can_msg_panda("ECMEngineStatus", 0, {"CruiseMainOn": 1 if on else 0})
+  def _main_on_msg(self, on, brake=False):
+    # cruise main and the camera-path brake bit live in the same message, so set both at once
+    return self.packer.make_can_msg_safety("ECMEngineStatus", 0, {"CruiseMainOn": 1 if on else 0, "BrakePressed": brake})
 
   def _regen_paddle_msg(self, pressed):
     return self.packer.make_can_msg_panda("EBCMRegenPaddle", 0, {"RegenPaddle": 2 if pressed else 0})
@@ -653,11 +654,10 @@ class TestGmCcLongitudinalSafety(TestGmCameraSafety):
   def _prndl2_msg(self, regen):
     return self.packer.make_can_msg_panda("ECMPRDNL2", 0, {"PRNDL2": 5 if regen else 6, "ManualMode": 1 if regen else 0})
 
-  def _backstop_precondition(self, main_on=True, speed=20.0):
+  def _backstop_precondition(self, main_on=True, speed=20.0, brake=False):
     self.safety.set_timer(0)
-    self._rx(self._main_on_msg(main_on))
     self._rx(self._speed_msg(speed))
-    self._rx(self._user_brake_msg(False))
+    self._rx(self._main_on_msg(main_on, brake=brake))
 
   def _arm_backstop(self):
     self._rx(self._pcm_status_msg(True))
@@ -711,7 +711,7 @@ class TestGmCcLongitudinalSafety(TestGmCameraSafety):
       self.safety.init_tests()
       self._backstop_precondition(main_on=main_on, speed=speed)
       self._arm_backstop()
-      self._rx(self._user_brake_msg(brake))
+      self._rx(self._main_on_msg(main_on, brake=brake))
       self.assertFalse(self._tx(self._regen_paddle_msg(True)), (main_on, speed, brake))
       self.assertFalse(self._tx(self._button_msg(Buttons.RES_ACCEL)), (main_on, speed, brake))
 
