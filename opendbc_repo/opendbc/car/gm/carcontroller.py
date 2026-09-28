@@ -958,6 +958,8 @@ class CarController(CarControllerBase):
 
     paddle_spoof_pressed = raw_regen_active and (CS.out.vEgo > 2.68)
 
+    # The panda paddle scheduler only runs on pedal-interceptor cars; on a cruise-button Bolt these
+    # frames go straight to the bus at 25 Hz alongside the stock paddle message.
     backstop_paddle = self.bolt_cc_backstop_action == BOLT_CC_ACTION_PADDLE and CS.out.vEgo > 2.68
     if backstop_paddle:
       self.bolt_cc_paddle_tail_frames = int(round(BOLT_CC_PADDLE_TAIL_S / DT_CTRL))

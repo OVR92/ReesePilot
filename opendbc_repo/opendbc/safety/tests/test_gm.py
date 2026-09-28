@@ -791,25 +791,6 @@ class TestGmCcLongitudinalPandaSchedSafety(TestGmCcLongitudinalSafety):
     self.assertFalse(self._tx(self._button_msg(Buttons.RES_ACCEL)))
 
 
-class TestGmCcLongitudinalBackstopSchedSafety(TestGmCcLongitudinalPandaSchedSafety):
-  """Cruise-button Bolt with the regen backstop: CC long, no ACC, no pedal, panda paddle scheduler."""
-  INTERCEPTOR_GAS_PRESSED = None
-
-  def setUp(self):
-    self.packer = CANPackerPanda("gm_global_a_powertrain_generated")
-    self.packer_chassis = CANPackerPanda("gm_global_a_chassis")
-    self.safety = libsafety_py.libsafety
-    self.safety.set_safety_hooks(
-      CarParams.SafetyModel.gm,
-      GMSafetyFlags.HW_CAM | GMSafetyFlags.FLAG_GM_NO_ACC | GMSafetyFlags.FLAG_GM_CC_LONG | GMSafetyFlags.FLAG_GM_PANDA_PADDLE_SCHED,
-    )
-    self.safety.init_tests()
-
-  def test_prev_gas(self):
-    pass  # no interceptor on this path
-
-  def test_no_disengage_on_gas(self):
-    pass  # no interceptor on this path
 class TestGmVoltAutoHoldCameraSafety(TestGmCameraSafetyBase):
   TX_MSGS = TestGmCameraSafety.TX_MSGS + [[0x315, 0]]
   FWD_BLACKLISTED_ADDRS = {2: [0x180], 0: [0x184]}
