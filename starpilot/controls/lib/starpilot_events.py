@@ -84,7 +84,11 @@ class StarPilotEvents:
       backstop_allowed=bool(getattr(starpilot_toggles, "gm_bolt_cc_regen_backstop", False)),
       min_resume_speed=CRUISE_BUTTON_MIN_RESUME_SPEED,
     )
-    if brake.alert:
+    if brake.attention_chime:
+      self.events.add(StarPilotEventName.cruiseButtonSlowerTrafficChime)
+    if brake.attention and not brake.brake:
+      self.events.add(StarPilotEventName.cruiseButtonSlowerTraffic)
+    if brake.brake:
       self.events.add(StarPilotEventName.cruiseButtonBrakeNow)
     if brake.stage in (STAGE_CANCEL, STAGE_PADDLE, STAGE_RESUME):
       self.events.add(StarPilotEventName.cruiseButtonRegenActive)

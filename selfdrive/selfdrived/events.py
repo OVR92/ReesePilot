@@ -1277,10 +1277,26 @@ STARPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.NO_ENTRY: NoEntryAlert("Pedal Not Calibrated: Check Calibration"),
   },
 
+  StarPilotEventName.cruiseButtonSlowerTraffic: {
+    ET.PERMANENT: Alert(
+      "Slower Traffic Ahead",
+      "",
+      AlertStatus.userPrompt, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, .2),
+  },
+
+  StarPilotEventName.cruiseButtonSlowerTrafficChime: {
+    ET.WARNING: Alert(
+      "Slower Traffic Ahead",
+      "",
+      AlertStatus.userPrompt, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 1.),
+  },
+
   StarPilotEventName.cruiseButtonBrakeNow: {
     ET.PERMANENT: Alert(
       "BRAKE!",
-      "Lowering the set speed is not enough",
+      "Regen is not enough",
       AlertStatus.critical, AlertSize.full,
       Priority.HIGHEST, VisualAlert.fcw, AudibleAlert.warningImmediate, 1.),
   },

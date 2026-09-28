@@ -397,33 +397,6 @@ def get_vehicle_min_accel(CP, v_ego):
   return float(ACCEL_MIN)
 
 
-# Cruise-button Bolts (no ACC, no pedal) slow only by lowering the stock set speed. Measured on a
-# 2023 Bolt EUV: 65 -> 55 mph in ~8 s (0.56 m/s^2), the same in D and L, because the stock cruise
-# applies its own mild lift-off regen regardless of gear. Cancelling cruise in L is ~1.1 m/s^2; that
-# stronger brake is a separate backstop (cruise_button_brake.py), not something the plan may assume.
-BOLT_CC_LEAD_MIN_ACCEL_BP = [0.0, 30.0]
-BOLT_CC_LEAD_MIN_ACCEL_V = [-0.55, -0.55]
-
-
-def get_lead_min_accel(CP, v_ego):
-  # Lower bound the MPC may plan for ego accel around a lead. Default is full braking authority;
-  # cruise-button Bolts get their coast/regen envelope so approaches start at first sight.
-  is_gm = getattr(CP, "carName", "") == "gm" or getattr(CP, "brand", "") == "gm"
-  if is_gm and not getattr(CP, "enableGasInterceptorDEPRECATED", False):
-    try:
-      from opendbc.car.gm.values import GMFlags, CAR
-      bolt_cc_cars = {
-        CAR.CHEVROLET_BOLT_CC_2017,
-        CAR.CHEVROLET_BOLT_CC_2018_2021,
-        CAR.CHEVROLET_BOLT_CC_2022_2023,
-      }
-      if bool(CP.flags & GMFlags.CC_LONG.value) and CP.carFingerprint in bolt_cc_cars:
-        return float(np.interp(v_ego, BOLT_CC_LEAD_MIN_ACCEL_BP, BOLT_CC_LEAD_MIN_ACCEL_V))
-    except Exception:
-      pass
-  return float(ACCEL_MIN)
-
-
 def get_far_lead_coast_cap(lead, v_ego, desired_gap, output_a_target):
   if lead is None or not bool(getattr(lead, "status", False)):
     return float(output_a_target)
@@ -2362,7 +2335,6 @@ class LongitudinalPlanner:
                          panic_bypass=panic_bypass,
                          filter_time_factor_floor=steady_follow_filter_floor)
     self.mpc.set_accel_limits(accel_limits_turns[0], accel_limits_turns[1])
-    self.mpc.set_lead_accel_limit(get_lead_min_accel(self.CP, v_ego))
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
     # After deciding the MPC mode via get_mpc_mode(), ensure MPC uses that mode when not mlsim
     dec_mpc_mode = self.get_mpc_mode()
