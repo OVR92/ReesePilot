@@ -769,6 +769,47 @@ class TestGmCcLongitudinalPandaSchedSafety(TestGmCcLongitudinalSafety):
     self.assertFalse(self.safety.get_longitudinal_allowed())
     self._rx(self._interceptor_user_gas(0))
     self.assertTrue(self.safety.get_longitudinal_allowed())
+
+  # With the panda paddle scheduler, external paddle / PRNDL2 frames are always buffered (tx False) and
+  # re-emitted on the stock cadence; the backstop rule itself is exercised on that internal path by the
+  # same check the direct-path class covers. Here only the button side is observable.
+  def test_backstop_allows_paddle_and_resume_in_window(self):
+    self._backstop_precondition()
+    self._arm_backstop()
+    self.assertFalse(self._tx(self._regen_paddle_msg(True)))
+    self.assertFalse(self._tx(self._prndl2_msg(True)))
+    self.assertTrue(self._tx(self._button_msg(Buttons.RES_ACCEL)))
+    self.assertTrue(self._tx(self._button_msg(Buttons.UNPRESS)))
+    self.assertFalse(self._tx(self._button_msg(Buttons.DECEL_SET)))
+
+  def test_backstop_window_expires(self):
+    self._backstop_precondition()
+    self._arm_backstop()
+    self.safety.set_timer(self.GM_CC_BACKSTOP_WINDOW_US - 1)
+    self.assertTrue(self._tx(self._button_msg(Buttons.RES_ACCEL)))
+    self.safety.set_timer(self.GM_CC_BACKSTOP_WINDOW_US + 1)
+    self.assertFalse(self._tx(self._button_msg(Buttons.RES_ACCEL)))
+
+
+class TestGmCcLongitudinalBackstopSchedSafety(TestGmCcLongitudinalPandaSchedSafety):
+  """Cruise-button Bolt with the regen backstop: CC long, no ACC, no pedal, panda paddle scheduler."""
+  INTERCEPTOR_GAS_PRESSED = None
+
+  def setUp(self):
+    self.packer = CANPackerPanda("gm_global_a_powertrain_generated")
+    self.packer_chassis = CANPackerPanda("gm_global_a_chassis")
+    self.safety = libsafety_py.libsafety
+    self.safety.set_safety_hooks(
+      CarParams.SafetyModel.gm,
+      GMSafetyFlags.HW_CAM | GMSafetyFlags.FLAG_GM_NO_ACC | GMSafetyFlags.FLAG_GM_CC_LONG | GMSafetyFlags.FLAG_GM_PANDA_PADDLE_SCHED,
+    )
+    self.safety.init_tests()
+
+  def test_prev_gas(self):
+    pass  # no interceptor on this path
+
+  def test_no_disengage_on_gas(self):
+    pass  # no interceptor on this path
 class TestGmVoltAutoHoldCameraSafety(TestGmCameraSafetyBase):
   TX_MSGS = TestGmCameraSafety.TX_MSGS + [[0x315, 0]]
   FWD_BLACKLISTED_ADDRS = {2: [0x180], 0: [0x184]}
