@@ -344,13 +344,6 @@ class VehicleSettingsManagerView(PanelManagerView):
         "get_state": lambda: self._controller._params.get_bool("GMDashSpoofOffsets"),
         "set_state": lambda s: self._controller._on_toggle("GMDashSpoofOffsets"),
       })
-    if cs.isGM and cs.isBolt and cs.hasCCLong and not cs.hasPedal:
-      toggles.append({
-        "title": tr("Regen Paddle Backstop"),
-        "subtitle": tr("Warn, cancel cruise, pull the regen paddle while needed, then resume once the gap is rebuilt."),
-        "get_state": lambda: self._controller._params.get_bool("GMBoltCCRegenBackstop"),
-        "set_state": lambda s: self._controller._on_toggle("GMBoltCCRegenBackstop"),
-      })
     if cs.isGM and cs.hasOpenpilotLongitudinal:
       toggles.append({
         "title": tr("CAN Ignition Only"),

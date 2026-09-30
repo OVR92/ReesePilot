@@ -12,6 +12,7 @@ from opendbc.car.gm.values import (
 from opendbc.car.interfaces import CarControllerBase
 from openpilot.common.pid import PIDController
 from openpilot.common.params import Params, UnknownKeyName
+from openpilot.starpilot.common.cruise_button_brake_channel import read_action as read_cruise_button_brake_action
 from openpilot.starpilot.common.testing_grounds import testing_ground
 
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
@@ -181,7 +182,7 @@ BOLT_CC_BACKSTOP_CARS = {
   CAR.CHEVROLET_BOLT_CC_2018_2021,
   CAR.CHEVROLET_BOLT_CC_2022_2023,
 }
-# Actions published by starpilot's cruise_button_brake stage machine (CruiseButtonBrakeAction)
+# Actions published by starpilot's cruise_button_brake stage machine (cruise_button_brake_channel)
 BOLT_CC_ACTION_NONE = 0
 BOLT_CC_ACTION_HOLD = 1
 BOLT_CC_ACTION_CANCEL = 2
@@ -553,7 +554,6 @@ class CarController(CarControllerBase):
     self.bolt_cc_backstop_supported = supports_bolt_cc_regen_backstop(self.CP)
     self.bolt_cc_backstop_action = BOLT_CC_ACTION_NONE
     self.bolt_cc_paddle_tail_frames = 0
-    self.params_memory = Params(memory=True)
     self.xt4_cc_button_burst_remaining = 0
     self.xt4_cc_button_burst_button = CruiseButtons.INIT
     self.xt4_cc_button_burst_last_counter = -1
@@ -867,7 +867,7 @@ class CarController(CarControllerBase):
 
     if self.bolt_cc_backstop_supported and self.frame % 4 == 0:
       try:
-        self.bolt_cc_backstop_action = parse_bolt_cc_backstop_action(self.params_memory.get("CruiseButtonBrakeAction"))
+        self.bolt_cc_backstop_action = parse_bolt_cc_backstop_action(read_cruise_button_brake_action())
       except Exception:
         self.bolt_cc_backstop_action = BOLT_CC_ACTION_NONE
     if not (self.bolt_cc_backstop_supported and CC.enabled):

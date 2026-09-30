@@ -1282,7 +1282,7 @@ STARPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "Slower Traffic Ahead",
       "",
       AlertStatus.userPrompt, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.none, .2),
+      Priority.MID, VisualAlert.none, AudibleAlert.none, .2),
   },
 
   StarPilotEventName.cruiseButtonSlowerTrafficChime: {
@@ -1290,7 +1290,7 @@ STARPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "Slower Traffic Ahead",
       "",
       AlertStatus.userPrompt, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 1.),
+      Priority.MID, VisualAlert.none, AudibleAlert.prompt, 1.),
   },
 
   StarPilotEventName.cruiseButtonBrakeNow: {

@@ -3522,15 +3522,6 @@
         "settings_tier": "simple"
       },
       {
-        "key": "GMBoltCCRegenBackstop",
-        "label": "Regen Paddle Backstop",
-        "description": "On cruise-button Bolts (no ACC, no pedal), when a lead needs clearly more braking than lowering the set speed can give: warn, cancel the stock cruise, pull the regen paddle while needed, and resume cruise once the gap is rebuilt. Requires the matching Panda firmware.",
-        "picker_description": "Warn, cancel cruise, regen paddle, then auto-resume when lowering the set speed is not enough.",
-        "data_type": "bool",
-        "ui_type": "toggle",
-        "settings_tier": "simple"
-      },
-      {
         "key": "IgnoreIgnitionLine",
         "label": "Use CAN Ignition Only",
         "description": "Use Panda firmware that ignores the physical ignition line and starts from CAN ignition only.\n\nRequires a Panda flash. Use this only on vehicles with reliable CAN ignition when the harness box reports false ignition.",

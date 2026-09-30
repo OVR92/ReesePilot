@@ -7,6 +7,7 @@ from openpilot.selfdrive.controls.lib.desire_helper import TurnDirection
 from openpilot.selfdrive.selfdrived.events import ET, EVENT_NAME, STARPILOT_EVENT_NAME, EventName, StarPilotEventName, Events
 
 from openpilot.starpilot.common.starpilot_variables import CRUISING_SPEED, NON_DRIVING_GEARS
+from openpilot.starpilot.common.cruise_button_brake_channel import write_action as write_cruise_button_brake_action
 from openpilot.starpilot.controls.lib.cruise_button_brake import (
   ACTION_NONE, CRUISE_BUTTON_BRAKE_CARS, STAGE_CANCEL, STAGE_PADDLE, STAGE_RESUME, CruiseButtonBrake,
 )
@@ -94,9 +95,13 @@ class StarPilotEvents:
       self.events.add(StarPilotEventName.cruiseButtonRegenActive)
     if brake.disengage:
       self.events.add(StarPilotEventName.cruiseButtonRegenCancel)
-    if brake.action != self.cruise_button_brake_action:
-      # the GM car controller reads this and sends CANCEL / paddle / RESUME frames
-      self.starpilot_planner.params_memory.put_nonblocking("CruiseButtonBrakeAction", str(int(brake.action)))
+    if brake.action != ACTION_NONE or brake.action != self.cruise_button_brake_action:
+      # The GM car controller reads this and sends CANCEL / paddle / RESUME frames. Written every
+      # frame while active so the reader's freshness check keeps working; once on the way back to idle.
+      try:
+        write_cruise_button_brake_action(brake.action)
+      except OSError:
+        pass
       self.cruise_button_brake_action = brake.action
 
     if sm["starpilotCarState"].alwaysOnLateralAllowed != self.always_on_lateral_allowed_previously:

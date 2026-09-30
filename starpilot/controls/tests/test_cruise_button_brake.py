@@ -1,5 +1,6 @@
 import pytest
 
+from openpilot.starpilot.common import cruise_button_brake_channel as channel
 from openpilot.starpilot.controls.lib.cruise_button_brake import (
   ACTION_CANCEL, ACTION_HOLD, ACTION_NONE, ACTION_PADDLE, ACTION_RESUME,
   ATTENTION_RELEASE_S, BRAKE_PADDLE_STALL_S, BRAKE_RELEASE_S, CANCEL_CONFIRM_S, CANCEL_SETTLE_S,
@@ -193,6 +194,19 @@ def test_ignores_faster_slowly_closing_or_uncertain_leads():
   assert not _run(brake, 2.0, lead_status=True, lead_d_rel=30.0, lead_v_lead=30.0).attention
   assert not _run(brake, 2.0, lead_status=True, lead_d_rel=60.0, lead_v_lead=27.5).attention
   assert not _run(brake, 2.0, lead_status=True, lead_d_rel=110.0, lead_v_lead=0.0, lead_prob=0.5).attention
+
+
+def test_channel_roundtrip_and_staleness(tmp_path):
+  path = str(tmp_path / "action")
+  assert channel.read_action(path=path) == 0                       # missing file
+  channel.write_action(3, now=100.0, path=path)
+  assert channel.read_action(now=100.2, path=path) == 3
+  assert channel.read_action(now=100.0 + channel.STALE_S + 0.01, path=path) == 0   # writer stalled
+  channel.write_action(0, now=101.0, path=path)
+  assert channel.read_action(now=101.1, path=path) == 0
+  with open(path, "w", encoding="utf-8") as f:
+    f.write("garbage")
+  assert channel.read_action(path=path) == 0
 
 
 def test_inert_when_disabled_or_slow():

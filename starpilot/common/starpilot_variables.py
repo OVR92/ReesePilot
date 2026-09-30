@@ -25,7 +25,7 @@ from opendbc.car.tesla.values import CAR as TESLA_CAR
 from opendbc.car.toyota.values import CAR as TOYOTA_CAR, ToyotaStarPilotFlags
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.constants import CV
-from openpilot.common.params import Params
+from openpilot.common.params import Params, UnknownKeyName
 from openpilot.selfdrive.controls.lib.latcontrol_torque import KP
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.starpilot.common.model_versions import is_tinygrad_model_version
@@ -1589,10 +1589,14 @@ class StarPilotVariables:
       "GMDashSpoofOffsets",
       condition=toggle.car_make == "gm" and toggle.has_pedal,
     )
-    toggle.gm_bolt_cc_regen_backstop = self.get_value(
-      "GMBoltCCRegenBackstop",
-      condition=toggle.car_make == "gm" and toggle.has_cc_long and not toggle.has_pedal,
-    )
+    backstop_car = toggle.car_make == "gm" and toggle.has_cc_long and not toggle.has_pedal
+    try:
+      raw = self.params.get("GMBoltCCRegenBackstop") if backstop_car else None
+      toggle.gm_bolt_cc_regen_backstop = backstop_car and (raw is None or raw in (b"1", "1"))
+    except UnknownKeyName:
+      # The key table is compiled into the prebuilt params module; until it is rebuilt the toggle
+      # does not exist on the device, so the backstop defaults to on for these cars.
+      toggle.gm_bolt_cc_regen_backstop = backstop_car
     toggle.ignore_ignition_line = self.get_value("IgnoreIgnitionLine", condition=toggle.car_make == "gm")
     toggle.hkg_remote_start_boots_comma = self.get_value(
       "HKGRemoteStartBootsComma",
