@@ -974,10 +974,11 @@ class TestGMCarController:
     cs = self._bolt_cc_state(v_ego_mph=54.4, set_mph=55)
     self._bolt_cc_button(controller, cs, plan_mph=55.0)
     controller.frame += 4
-    # lead gone, planner climbing: tap up right away and keep tapping quickly
+    # lead gone, planner climbing: go straight for the cruise speed and keep tapping quickly
     button, interval = self._bolt_cc_button(controller, cs, plan_mph=60.0, accel=0.8, lead_visible=False)
     assert button == CruiseButtons.RES_ACCEL
     assert interval <= gmcan.BOLT_CC_OPEN_ROAD_TAP_INTERVAL_S
+    assert controller.gm_cc_target_speed * CV.MS_TO_MPH == pytest.approx(65.0)
 
   def test_bolt_cc_target_rises_gradually_with_a_lead_ahead(self):
     controller = self._bolt_cc_controller()

@@ -36,7 +36,8 @@ BOLT_CC_PLAN_HORIZON_S = 2.5          # actuators.speed is the planned speed thi
 BOLT_CC_TAP_HYSTERESIS_MPH = 0.8      # |target - set speed| needed before a 1 mph tap
 BOLT_CC_TARGET_TAU_UP_S = 1.5         # target filter time constant while the target rises
 BOLT_CC_TARGET_TAU_DOWN_S = 1.0       # target filter time constant while the target falls
-BOLT_CC_OPEN_ROAD_TAP_INTERVAL_S = 0.3  # up-taps with nobody ahead; the stock cruise's own acceleration is the limit
+BOLT_CC_OPEN_ROAD_TAP_INTERVAL_S = 0.2  # up-taps with nobody ahead (the cadence the original CC spam used); the stock
+                                        # cruise's own acceleration is the limit after that
 BOLT_CC_URGENT_DROP_MS = 1.0          # planned speed drop below the filtered target that bypasses the filter
 BOLT_CC_URGENT_DECEL = -0.5           # accel command that bypasses the filter and shortens the tap interval
 BOLT_CC_TAP_INTERVAL_BP_MPH = [1.0, 3.0, 6.0]
@@ -359,12 +360,14 @@ def _bolt_cc_setpoint_button(controller, CS, actuators, v_cruise, ms_convert, is
   # A sudden drop in the planned speed (lead braking) must not wait on the filter.
   urgent = accel <= BOLT_CC_URGENT_DECEL or raw_target < filtered - BOLT_CC_URGENT_DROP_MS
   # Nobody ahead and the planner is climbing back toward the cruise speed (e.g. after a lane change):
-  # follow it without lag, the stock cruise accelerates at its own pace anyway.
+  # go straight to the cruise speed, as a driver pressing RES would. The planned speed 2.5 s out only
+  # climbs at the planner's accel limit and would keep the set speed trailing the car for no reason;
+  # the stock cruise accelerates at its own fixed pace once the set speed is a few mph above it.
   open_road = has_cruise_cap and not lead_visible and raw_target > filtered
   if urgent and raw_target < filtered:
     filtered = raw_target
   elif open_road:
-    filtered = raw_target
+    filtered = float(v_cruise)
   else:
     tau = BOLT_CC_TARGET_TAU_UP_S if raw_target > filtered else BOLT_CC_TARGET_TAU_DOWN_S
     filtered += (raw_target - filtered) * min(dt / tau, 1.0)
