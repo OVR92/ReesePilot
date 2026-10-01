@@ -7,12 +7,14 @@ from openpilot.selfdrive.controls.lib.desire_helper import TurnDirection
 from openpilot.selfdrive.selfdrived.events import ET, EVENT_NAME, STARPILOT_EVENT_NAME, EventName, StarPilotEventName, Events
 
 from openpilot.starpilot.common.starpilot_variables import CRUISING_SPEED, NON_DRIVING_GEARS
+from cereal import car
 from openpilot.starpilot.common.cruise_button_brake_channel import write_action as write_cruise_button_brake_action
 from openpilot.starpilot.controls.lib.cruise_button_brake import (
   ACTION_NONE, CRUISE_BUTTON_BRAKE_CARS, STAGE_CANCEL, STAGE_PADDLE, STAGE_RESUME, CruiseButtonBrake,
 )
 
 CRUISE_BUTTON_MIN_RESUME_SPEED = 25.0 * CV.MPH_TO_MS  # stock cruise will not resume below 24 mph; add margin
+ButtonType = car.CarState.ButtonEvent.Type
 
 DEJA_VU_G_FORCE = 0.75
 RANDOM_EVENTS_CHANCE = 0.01 * DT_MDL
@@ -68,9 +70,10 @@ class StarPilotEvents:
 
     lead_one = sm["radarState"].leadOne
     car_state = sm["carState"]
+    bolt_cc = getattr(starpilot_toggles, "car_model", None) in CRUISE_BUTTON_BRAKE_CARS
     brake = self.cruise_button_brake.update(
       DT_MDL,
-      enabled=long_control_active and getattr(starpilot_toggles, "car_model", None) in CRUISE_BUTTON_BRAKE_CARS,
+      long_active=long_control_active and bolt_cc,
       cruise_active=car_state.cruiseState.enabled,
       cruise_available=car_state.cruiseState.available,
       v_ego=car_state.vEgo,
@@ -82,12 +85,13 @@ class StarPilotEvents:
       gas_pressed=car_state.gasPressed,
       brake_pressed=car_state.brakePressed,
       driver_regen=car_state.regenBraking,
+      driver_cancel=any(be.type == ButtonType.cancel for be in car_state.buttonEvents),
       backstop_allowed=bool(getattr(starpilot_toggles, "gm_bolt_cc_regen_backstop", False)),
       min_resume_speed=CRUISE_BUTTON_MIN_RESUME_SPEED,
     )
     if brake.attention_chime:
       self.events.add(StarPilotEventName.cruiseButtonSlowerTrafficChime)
-    if brake.attention and not brake.brake:
+    if brake.attention and not brake.brake and brake.stage < STAGE_CANCEL:
       self.events.add(StarPilotEventName.cruiseButtonSlowerTraffic)
     if brake.brake:
       self.events.add(StarPilotEventName.cruiseButtonBrakeNow)
@@ -95,6 +99,10 @@ class StarPilotEvents:
       self.events.add(StarPilotEventName.cruiseButtonRegenActive)
     if brake.disengage:
       self.events.add(StarPilotEventName.cruiseButtonRegenCancel)
+    if brake.engage:
+      self.events.add(StarPilotEventName.cruiseButtonRegenResume)
+    if brake.hand_back:
+      self.events.add(StarPilotEventName.cruiseButtonRegenHandBack)
     if brake.action != ACTION_NONE or brake.action != self.cruise_button_brake_action:
       # The GM car controller reads this and sends CANCEL / paddle / RESUME frames. Written every
       # frame while active so the reader's freshness check keeps working; once on the way back to idle.

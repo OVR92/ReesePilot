@@ -9,12 +9,15 @@ Everything here keys off lead geometry (the constant deceleration needed to matc
 small gap), not the planner's acceleration request, which is shaped for cars that can brake and would
 fire far too early on this one.
 
-  attention  yellow banner + one chime: a slower car ahead needs about what lowering the set speed gives
-  backstop   cancel the stock cruise, feed the regen paddle while needed, press RES once the gap is rebuilt
-  brake      red BRAKE! + loud tone: more than the paddle can give, or the paddle is not gaining; driver must brake
+  attention  amber banner + one chime: a slower car ahead needs about what lowering the set speed gives
+  backstop   disengage openpilot and cancel the stock cruise, feed the regen paddle while needed, press
+             RES once the gap is rebuilt, then re-engage openpilot with its previous set speed
+  brake      red BRAKE! + loud tone: more than the paddle can give, or the paddle is not gaining
 
-openpilot stays engaged through the backstop; the car controller reads the published action and sends
-the frames, and the panda only permits them for a short window after openpilot's own cancel.
+openpilot is disengaged for the duration of the backstop on purpose: the panda's controls-allowed flag
+follows the stock cruise, and openpilot engaged for 2 s without it raises the controls-mismatch alert.
+Always-on lateral keeps steering. The car controller reads the published action and sends the frames,
+which the panda only permits for a short window after openpilot's own cancel.
 """
 from dataclasses import dataclass
 
@@ -31,8 +34,8 @@ STAGE_CANCEL = 2
 STAGE_PADDLE = 3
 STAGE_RESUME = 4
 
-# Published to the car controller: 0 normal, 1 hold (no button spam, keep steering), 2 send CANCEL,
-# 3 feed the regen paddle, 4 send RESUME.
+# Published to the car controller: 0 normal, 1 hold (no button spam), 2 send CANCEL, 3 feed the
+# regen paddle, 4 send RESUME (kept up through the re-engage so the set speed is restored).
 ACTION_NONE = 0
 ACTION_HOLD = 1
 ACTION_CANCEL = 2
@@ -40,11 +43,11 @@ ACTION_PADDLE = 3
 ACTION_RESUME = 4
 
 MIN_SPEED = 5.0                      # m/s, nothing below this
-LEAD_MIN_PROB = 0.85                 # vision leads only count when the model is confident
 LEAD_MIN_CLOSING = 3.0               # m/s
 LEAD_GAP = 8.0                       # m, gap the required-decel estimate aims to keep
+LEAD_MIN_PROB_ACTION = 0.65          # model confidence before the backstop or the red alert may act
 
-# tier 1: heads-up
+# tier 1: heads-up (any lead the planner itself accepts)
 ATTENTION_REQUIRED_DECEL = 0.45      # about what the set speed can give
 ATTENTION_RELEASE_DECEL = 0.25
 ATTENTION_RELEASE_S = 1.5
@@ -71,6 +74,7 @@ PADDLE_RELEASE_S = 0.5
 RESUME_SETTLE_S = 1.0                # eased this long before pressing RES
 RESUME_TIMEOUT_S = 3.0               # RES presses not taking
 RESUME_GIVEUP_S = 12.0               # conditions never right (too slow, gas held): hand back to the driver
+REENGAGE_TIMEOUT_S = 2.0             # openpilot did not come back after cruise resumed
 RESUME_LOCKOUT_S = 3.0               # no new cancel right after a resume
 BACKSTOP_WINDOW_S = 18.0             # stay inside the panda's 20 s window after our cancel
 
@@ -82,7 +86,7 @@ BRAKE_PADDLE_STALL_REQUIRED_DECEL = 1.1
 BRAKE_RELEASE_REQUIRED_DECEL = 1.0
 BRAKE_RELEASE_S = 1.0
 
-DISENGAGE_EVENT_S = 0.3              # hold the hand-back event so selfdrived cannot miss it
+EVENT_HOLD_S = 0.3                   # hold one-shot events so selfdrived cannot miss them
 TIMER_EPS = 1e-6
 
 
@@ -93,7 +97,9 @@ class BrakeOutputs:
   brake: bool = False
   stage: int = STAGE_IDLE
   action: int = ACTION_NONE
-  disengage: bool = False
+  disengage: bool = False   # USER_DISABLE: we are taking the stock cruise away from openpilot
+  engage: bool = False      # ENABLE: stock cruise is back, re-engage openpilot
+  hand_back: bool = False   # notice: the driver has to press RES / SET
 
 
 def required_decel_to_match_lead(v_ego, lead_d_rel, lead_v_lead, gap=LEAD_GAP):
@@ -113,7 +119,7 @@ def time_to_contact(v_ego, lead_d_rel, lead_v_lead):
 
 
 class CruiseButtonBrake:
-  """Alert tiers and the cancel -> paddle -> resume stage machine. Call update() every frame."""
+  """Alert tiers and the cancel -> paddle -> resume -> re-engage stage machine. Call update() every frame."""
 
   def __init__(self):
     self.reset()
@@ -132,9 +138,12 @@ class CruiseButtonBrake:
     self.paddle_release_s = 0.0
     self.settle_s = 0.0
     self.resume_s = 0.0
+    self.reengage_s = 0.0
     self.since_cancel_s = 0.0
     self.lockout_s = 0.0
     self.disengage_s = 0.0
+    self.engage_s = 0.0
+    self.hand_back_s = 0.0
 
   def _enter(self, stage):
     self.stage = stage
@@ -144,47 +153,62 @@ class CruiseButtonBrake:
     self.paddle_release_s = 0.0
     self.settle_s = 0.0
     self.resume_s = 0.0
+    self.reengage_s = 0.0
 
   def _hand_back(self):
+    lockout = self.lockout_s
     self.reset()
-    self.disengage_s = DISENGAGE_EVENT_S
-    return BrakeOutputs(disengage=True)
+    self.lockout_s = max(lockout, RESUME_LOCKOUT_S)
+    self.hand_back_s = EVENT_HOLD_S
+    return self._outputs(ACTION_NONE)
 
-  def update(self, dt, *, enabled, cruise_active, cruise_available, v_ego, accel_cmd, lead_status, lead_d_rel,
-             lead_v_lead, lead_prob, gas_pressed, brake_pressed, driver_regen, backstop_allowed, min_resume_speed):
-    if not enabled:
-      self.reset()
-      return BrakeOutputs()
+  def _outputs(self, action):
+    return BrakeOutputs(attention=self.attention, brake=self.brake, stage=self.stage, action=action,
+                        disengage=self.disengage_s > TIMER_EPS, engage=self.engage_s > TIMER_EPS,
+                        hand_back=self.hand_back_s > TIMER_EPS)
 
-    if self.disengage_s > TIMER_EPS:
-      self.disengage_s -= dt
-      return BrakeOutputs(disengage=True)
+  def update(self, dt, *, long_active, cruise_active, cruise_available, v_ego, accel_cmd, lead_status, lead_d_rel,
+             lead_v_lead, lead_prob, gas_pressed, brake_pressed, driver_regen, driver_cancel, backstop_allowed,
+             min_resume_speed):
+    # one-shot event timers tick first so a hand-back right after reset still shows
+    self.disengage_s = max(self.disengage_s - dt, 0.0)
+    self.engage_s = max(self.engage_s - dt, 0.0)
+    self.hand_back_s = max(self.hand_back_s - dt, 0.0)
+    self.lockout_s = max(self.lockout_s - dt, 0.0)
 
-    lead_ok = lead_status and float(lead_prob) >= LEAD_MIN_PROB
-    required = required_decel_to_match_lead(v_ego, lead_d_rel, lead_v_lead) if lead_ok else 0.0
-    ttc = time_to_contact(v_ego, lead_d_rel, lead_v_lead) if lead_ok else float("inf")
+    in_backstop = self.stage >= STAGE_CANCEL
+    if not long_active and not in_backstop:
+      # openpilot is not driving and we did not take it away: nothing to do but finish any notice
+      hand_back = self.hand_back_s > TIMER_EPS
+      self.reset_keep_timers()
+      return BrakeOutputs(hand_back=hand_back)
+
+    lead_ok = bool(lead_status)
+    lead_confident = lead_ok and float(lead_prob) >= LEAD_MIN_PROB_ACTION
+    required_any = required_decel_to_match_lead(v_ego, lead_d_rel, lead_v_lead) if lead_ok else 0.0
+    required = required_any if lead_confident else 0.0
+    ttc = time_to_contact(v_ego, lead_d_rel, lead_v_lead) if lead_confident else float("inf")
     needed = required >= NEEDED_REQUIRED_DECEL or accel_cmd <= NEEDED_ACCEL
     eased = required < EASED_REQUIRED_DECEL and accel_cmd > EASED_ACCEL
     driver_override = gas_pressed or brake_pressed or driver_regen
 
-    if self.stage in (STAGE_IDLE, STAGE_ATTENTION) and v_ego < MIN_SPEED:
-      self.reset()
-      return BrakeOutputs()
+    if not in_backstop and v_ego < MIN_SPEED:
+      self.reset_keep_timers()
+      return self._outputs(ACTION_NONE)
 
-    self.lockout_s = max(self.lockout_s - dt, 0.0)
-    if self.stage >= STAGE_CANCEL:
+    if in_backstop:
       self.since_cancel_s += dt
     self.stage_s += dt
 
-    # --- tier 1: attention (hysteresis, one chime on the rising edge)
+    # --- tier 1: attention (hysteresis, one chime on the rising edge); any lead the planner accepts counts
     chime = False
     if not self.attention:
-      if required >= ATTENTION_REQUIRED_DECEL:
+      if required_any >= ATTENTION_REQUIRED_DECEL:
         self.attention = True
         self.attention_release_s = 0.0
         chime = True
     else:
-      self.attention_release_s = self.attention_release_s + dt if required < ATTENTION_RELEASE_DECEL else 0.0
+      self.attention_release_s = self.attention_release_s + dt if required_any < ATTENTION_RELEASE_DECEL else 0.0
       if self.attention_release_s + TIMER_EPS >= ATTENTION_RELEASE_S:
         self.attention = False
     if self.stage == STAGE_IDLE and self.attention:
@@ -206,12 +230,14 @@ class CruiseButtonBrake:
         self.brake = False
 
     # --- backstop stage machine
-    action = ACTION_NONE
     self.cancel_s = self.cancel_s + dt if required >= CANCEL_REQUIRED_DECEL else 0.0
     self.accel_backup_s = self.accel_backup_s + dt if accel_cmd <= CANCEL_ACCEL_BACKUP else 0.0
 
+    if in_backstop and (brake_pressed or driver_cancel or not cruise_available):
+      return self._hand_back()
+
     if self.stage in (STAGE_IDLE, STAGE_ATTENTION):
-      can_cancel = (backstop_allowed and cruise_active and not driver_override and
+      can_cancel = (backstop_allowed and long_active and cruise_active and not driver_override and
                     v_ego >= CANCEL_MIN_SPEED and self.lockout_s <= TIMER_EPS)
       trigger = (self.cancel_s + TIMER_EPS >= CANCEL_CONFIRM_S or
                  required >= CANCEL_IMMEDIATE_REQUIRED_DECEL or
@@ -220,32 +246,33 @@ class CruiseButtonBrake:
         self.attention = True
         self._enter(STAGE_CANCEL)
         self.since_cancel_s = 0.0
-        action = ACTION_CANCEL
+        self.disengage_s = EVENT_HOLD_S
+        out = self._outputs(ACTION_CANCEL)
+        out.attention_chime = chime
+        return out
+      out = self._outputs(ACTION_NONE)
+      out.attention_chime = chime
+      return out
 
-    elif self.stage == STAGE_CANCEL:
-      if brake_pressed:
-        return self._hand_back()
+    if self.stage == STAGE_CANCEL:
       if gas_pressed:
         self._enter(STAGE_RESUME)
-        action = ACTION_HOLD
-      elif cruise_active:
-        action = ACTION_CANCEL
+        return self._outputs(ACTION_HOLD)
+      if cruise_active:
         if self.stage_s + TIMER_EPS >= CANCEL_TIMEOUT_S:
           self._enter(STAGE_PADDLE)
-          action = ACTION_PADDLE
-      else:
-        self.dropped_s += dt
-        action = ACTION_HOLD
-        if self.dropped_s + TIMER_EPS >= CANCEL_SETTLE_S:
-          if needed:
-            self._enter(STAGE_PADDLE)
-            action = ACTION_PADDLE
-          elif eased or self.dropped_s >= CANCEL_SETTLE_S + 2.0:
-            self._enter(STAGE_RESUME)
+          return self._outputs(ACTION_PADDLE)
+        return self._outputs(ACTION_CANCEL)
+      self.dropped_s += dt
+      if self.dropped_s + TIMER_EPS >= CANCEL_SETTLE_S:
+        if needed:
+          self._enter(STAGE_PADDLE)
+          return self._outputs(ACTION_PADDLE)
+        if eased or self.dropped_s >= CANCEL_SETTLE_S + 2.0:
+          self._enter(STAGE_RESUME)
+      return self._outputs(ACTION_HOLD)
 
-    elif self.stage == STAGE_PADDLE:
-      if brake_pressed:
-        return self._hand_back()
+    if self.stage == STAGE_PADDLE:
       self.hold_s += dt
       self.paddle_release_s = self.paddle_release_s + dt if eased else 0.0
       done = (gas_pressed or driver_regen or v_ego < PADDLE_MIN_SPEED or
@@ -253,32 +280,42 @@ class CruiseButtonBrake:
               (self.hold_s + TIMER_EPS >= PADDLE_MIN_HOLD_S and self.paddle_release_s + TIMER_EPS >= PADDLE_RELEASE_S))
       if done:
         self._enter(STAGE_RESUME)
-        action = ACTION_HOLD
-      else:
-        action = ACTION_PADDLE
+        return self._outputs(ACTION_HOLD)
+      return self._outputs(ACTION_PADDLE)
 
-    elif self.stage == STAGE_RESUME:
-      if brake_pressed:
-        return self._hand_back()
-      if cruise_active:
+    # STAGE_RESUME
+    if self.since_cancel_s >= BACKSTOP_WINDOW_S and not cruise_active:
+      return self._hand_back()
+    if cruise_active:
+      # stock cruise is back: ask selfdrived to re-engage openpilot, keep RESUME up so the car process
+      # restores the previous set speed, and wait for it to come back
+      if self.reengage_s == 0.0:
+        self.engage_s = EVENT_HOLD_S
+      self.reengage_s += dt
+      if long_active:
         self.lockout_s = RESUME_LOCKOUT_S
         self.stage = STAGE_ATTENTION if self.attention else STAGE_IDLE
         self.stage_s = 0.0
-        return BrakeOutputs(attention=self.attention, brake=self.brake, stage=self.stage, action=ACTION_NONE)
-      if self.since_cancel_s >= BACKSTOP_WINDOW_S:
+        self.engage_s = 0.0
+        return self._outputs(ACTION_NONE)
+      if self.reengage_s + TIMER_EPS >= REENGAGE_TIMEOUT_S:
         return self._hand_back()
-      if needed and backstop_allowed and not driver_override and v_ego >= PADDLE_MIN_SPEED:
-        self._enter(STAGE_PADDLE)
-        action = ACTION_PADDLE
-      else:
-        ready = (not needed and not gas_pressed and cruise_available and v_ego >= min_resume_speed)
-        self.settle_s = self.settle_s + dt if ready else 0.0
-        if self.settle_s + TIMER_EPS >= RESUME_SETTLE_S:
-          action = ACTION_RESUME
-          self.resume_s += dt
-        else:
-          action = ACTION_HOLD
-        if self.resume_s + TIMER_EPS >= RESUME_TIMEOUT_S or self.stage_s + TIMER_EPS >= RESUME_GIVEUP_S:
-          return self._hand_back()
+      return self._outputs(ACTION_RESUME)
+    if needed and backstop_allowed and not driver_override and v_ego >= PADDLE_MIN_SPEED:
+      self._enter(STAGE_PADDLE)
+      return self._outputs(ACTION_PADDLE)
+    ready = (not needed and not gas_pressed and v_ego >= min_resume_speed)
+    self.settle_s = self.settle_s + dt if ready else 0.0
+    if self.settle_s + TIMER_EPS >= RESUME_SETTLE_S:
+      self.resume_s += dt
+      if self.resume_s + TIMER_EPS >= RESUME_TIMEOUT_S:
+        return self._hand_back()
+      return self._outputs(ACTION_RESUME)
+    if self.stage_s + TIMER_EPS >= RESUME_GIVEUP_S:
+      return self._hand_back()
+    return self._outputs(ACTION_HOLD)
 
-    return BrakeOutputs(attention=self.attention, attention_chime=chime, brake=self.brake, stage=self.stage, action=action)
+  def reset_keep_timers(self):
+    disengage_s, engage_s, hand_back_s, lockout_s = self.disengage_s, self.engage_s, self.hand_back_s, self.lockout_s
+    self.reset()
+    self.disengage_s, self.engage_s, self.hand_back_s, self.lockout_s = disengage_s, engage_s, hand_back_s, lockout_s

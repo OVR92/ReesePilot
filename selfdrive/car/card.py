@@ -329,10 +329,18 @@ class Car:
     if self.sm['carControl'].enabled and not self.CC_prev.enabled and not preap_software_cruise:
       # Use CarState w/ buttons from the step selfdrived enables on
       desired_speed_limit = self.sm['starpilotPlan'].slcSpeedLimit + self.sm['starpilotPlan'].slcSpeedLimitOffset
+      # The cruise-button regen backstop re-engages openpilot after pressing RES on the stock
+      # cruise itself; treat that like a driver resume so the previous set speed comes back.
+      backstop_resume = False
+      try:
+        from openpilot.starpilot.common.cruise_button_brake_channel import read_action
+        backstop_resume = read_action() == 4
+      except Exception:
+        backstop_resume = False
       self.v_cruise_helper.initialize_v_cruise(
         self.CS_prev,
         self.experimental_mode,
-        self.resume_prev_button,
+        self.resume_prev_button or backstop_resume,
         self.starpilot_toggles,
         desired_speed_limit=desired_speed_limit,
       )

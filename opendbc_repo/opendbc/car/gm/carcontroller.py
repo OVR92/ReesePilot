@@ -870,7 +870,8 @@ class CarController(CarControllerBase):
         self.bolt_cc_backstop_action = parse_bolt_cc_backstop_action(read_cruise_button_brake_action())
       except Exception:
         self.bolt_cc_backstop_action = BOLT_CC_ACTION_NONE
-    if not (self.bolt_cc_backstop_supported and CC.enabled):
+    # openpilot is disengaged on purpose during the backstop; cruise main on is the gate instead
+    if not (self.bolt_cc_backstop_supported and CS.out.cruiseState.available):
       self.bolt_cc_backstop_action = BOLT_CC_ACTION_NONE
 
     if self.frame % 25 == 0:

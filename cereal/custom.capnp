@@ -183,6 +183,8 @@ struct StarPilotOnroadEvent @0xe344718567f9ce71 {
     cruiseButtonRegenActive @43;
     cruiseButtonSlowerTraffic @44;
     cruiseButtonSlowerTrafficChime @45;
+    cruiseButtonRegenResume @46;
+    cruiseButtonRegenHandBack @47;
   }
 }
 
