@@ -956,9 +956,10 @@ class TestGMCarController:
     return SimpleNamespace(out=out, CP=CP, buttons_counter=0)
 
   @staticmethod
-  def _bolt_cc_button(controller, CS, plan_mph, accel=0.0, v_cruise_mph=65.0):
+  def _bolt_cc_button(controller, CS, plan_mph, accel=0.0, v_cruise_mph=65.0, lead_visible=True):
     actuators = SimpleNamespace(accel=accel, speed=plan_mph * CV.MPH_TO_MS)
-    return gmcan._bolt_cc_setpoint_button(controller, CS, actuators, v_cruise_mph * CV.MPH_TO_MS, CV.MS_TO_MPH, False)
+    return gmcan._bolt_cc_setpoint_button(controller, CS, actuators, v_cruise_mph * CV.MPH_TO_MS, CV.MS_TO_MPH, False,
+                                          lead_visible)
 
   def test_bolt_cc_holds_set_speed_with_no_lead(self):
     controller = self._bolt_cc_controller()
@@ -967,6 +968,25 @@ class TestGMCarController:
       controller.frame += 4
       button, _ = self._bolt_cc_button(controller, cs, plan_mph=65.0, accel=0.05)
       assert button == CruiseButtons.INIT
+
+  def test_bolt_cc_open_road_climbs_back_to_cruise_without_lag(self):
+    controller = self._bolt_cc_controller()
+    cs = self._bolt_cc_state(v_ego_mph=54.4, set_mph=55)
+    self._bolt_cc_button(controller, cs, plan_mph=55.0)
+    controller.frame += 4
+    # lead gone, planner climbing: tap up right away and keep tapping quickly
+    button, interval = self._bolt_cc_button(controller, cs, plan_mph=60.0, accel=0.8, lead_visible=False)
+    assert button == CruiseButtons.RES_ACCEL
+    assert interval <= gmcan.BOLT_CC_OPEN_ROAD_TAP_INTERVAL_S
+
+  def test_bolt_cc_target_rises_gradually_with_a_lead_ahead(self):
+    controller = self._bolt_cc_controller()
+    cs = self._bolt_cc_state(v_ego_mph=54.4, set_mph=55)
+    self._bolt_cc_button(controller, cs, plan_mph=55.0)
+    for _ in range(5):
+      controller.frame += 4
+      button, _ = self._bolt_cc_button(controller, cs, plan_mph=60.0, accel=0.8, lead_visible=True)
+    assert button == CruiseButtons.INIT
 
   def test_bolt_cc_cruise_speed_caps_set_speed(self):
     controller = self._bolt_cc_controller()

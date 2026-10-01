@@ -34,8 +34,9 @@ BOLT_CC_BUTTON_CARS = {
 BOLT_CC_SPEEDO_RATIO = 1.01           # stock cruise holds vEgo about 1% under the displayed set speed
 BOLT_CC_PLAN_HORIZON_S = 2.5          # actuators.speed is the planned speed this far ahead
 BOLT_CC_TAP_HYSTERESIS_MPH = 0.8      # |target - set speed| needed before a 1 mph tap
-BOLT_CC_TARGET_TAU_UP_S = 3.0         # target filter time constant while the target rises
-BOLT_CC_TARGET_TAU_DOWN_S = 1.5       # target filter time constant while the target falls
+BOLT_CC_TARGET_TAU_UP_S = 1.5         # target filter time constant while the target rises
+BOLT_CC_TARGET_TAU_DOWN_S = 1.0       # target filter time constant while the target falls
+BOLT_CC_OPEN_ROAD_TAP_INTERVAL_S = 0.3  # up-taps with nobody ahead; the stock cruise's own acceleration is the limit
 BOLT_CC_URGENT_DROP_MS = 1.0          # planned speed drop below the filtered target that bypasses the filter
 BOLT_CC_URGENT_DECEL = -0.5           # accel command that bypasses the filter and shortens the tap interval
 BOLT_CC_TAP_INTERVAL_BP_MPH = [1.0, 3.0, 6.0]
@@ -324,7 +325,7 @@ def create_lka_icon_command(bus, active, critical, steer):
   return CanData(0x104c006c, dat, bus)
 
 
-def _bolt_cc_setpoint_button(controller, CS, actuators, v_cruise, ms_convert, is_metric):
+def _bolt_cc_setpoint_button(controller, CS, actuators, v_cruise, ms_convert, is_metric, lead_visible=True):
   """Pick the stock cruise button that moves the set speed toward the planner's speed target.
 
   Returns (button, min_seconds_since_last_tap). Filter state lives on the controller and is
@@ -357,7 +358,12 @@ def _bolt_cc_setpoint_button(controller, CS, actuators, v_cruise, ms_convert, is
 
   # A sudden drop in the planned speed (lead braking) must not wait on the filter.
   urgent = accel <= BOLT_CC_URGENT_DECEL or raw_target < filtered - BOLT_CC_URGENT_DROP_MS
+  # Nobody ahead and the planner is climbing back toward the cruise speed (e.g. after a lane change):
+  # follow it without lag, the stock cruise accelerates at its own pace anyway.
+  open_road = has_cruise_cap and not lead_visible and raw_target > filtered
   if urgent and raw_target < filtered:
+    filtered = raw_target
+  elif open_road:
     filtered = raw_target
   else:
     tau = BOLT_CC_TARGET_TAU_UP_S if raw_target > filtered else BOLT_CC_TARGET_TAU_DOWN_S
@@ -384,6 +390,8 @@ def _bolt_cc_setpoint_button(controller, CS, actuators, v_cruise, ms_convert, is
   interval = float(np.interp(abs(diff), BOLT_CC_TAP_INTERVAL_BP_MPH, BOLT_CC_TAP_INTERVAL_V_S))
   if button == CruiseButtons.DECEL_SET and urgent:
     interval = min(interval, BOLT_CC_URGENT_TAP_INTERVAL_S)
+  if button == CruiseButtons.RES_ACCEL and open_road:
+    interval = min(interval, BOLT_CC_OPEN_ROAD_TAP_INTERVAL_S)
   return button, interval
 
 
@@ -409,7 +417,7 @@ def _create_volt_cc_spam_command(CS, actuators, ms_convert):
   return CruiseButtons.RES_ACCEL, rate
 
 
-def create_gm_cc_spam_command(packer, controller, CS, actuators, starpilot_toggles, v_cruise=None):
+def create_gm_cc_spam_command(packer, controller, CS, actuators, starpilot_toggles, v_cruise=None, lead_visible=True):
   accel = actuators.accel
   v_ego = CS.out.vEgo
   cruise_btn = CruiseButtons.INIT
@@ -420,7 +428,7 @@ def create_gm_cc_spam_command(packer, controller, CS, actuators, starpilot_toggl
   bolt_cc = CS.CP.carFingerprint in BOLT_CC_BUTTON_CARS
 
   if bolt_cc:
-    cruise_btn, rate = _bolt_cc_setpoint_button(controller, CS, actuators, v_cruise, ms_convert, is_metric)
+    cruise_btn, rate = _bolt_cc_setpoint_button(controller, CS, actuators, v_cruise, ms_convert, is_metric, lead_visible)
   elif CS.CP.carFingerprint in VOLT_CC_CARS:
     cruise_btn, rate = _create_volt_cc_spam_command(CS, actuators, ms_convert)
   else:

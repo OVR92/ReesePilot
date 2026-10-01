@@ -1041,7 +1041,7 @@ class CarController(CarControllerBase):
     )
     if xt4_cc_button_spam:
       can_sends.extend(gmcan.create_gm_cc_spam_command(self.packer_pt, self, CS, actuators, starpilot_toggles,
-                                                       v_cruise=hud_v_cruise))
+                                                       v_cruise=hud_v_cruise, lead_visible=bool(hud_control.leadVisible)))
     elif self.CP.carFingerprint == CAR.CADILLAC_XT4_CC:
       self.xt4_cc_button_burst_remaining = 0
       self.xt4_cc_button_burst_button = CruiseButtons.INIT
@@ -1221,7 +1221,7 @@ class CarController(CarControllerBase):
             if self.CP.carFingerprint != CAR.CADILLAC_XT4_CC:
               # Using extend instead of append since the message is only sent intermittently
               can_sends.extend(gmcan.create_gm_cc_spam_command(self.packer_pt, self, CS, actuators, starpilot_toggles,
-                                                               v_cruise=hud_v_cruise))
+                                                               v_cruise=hud_v_cruise, lead_visible=bool(hud_control.leadVisible)))
           else:
             self.gm_cc_target_speed = None
             self.gm_cc_target_frame = None
